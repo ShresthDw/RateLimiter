@@ -4,16 +4,23 @@ import { RequestLog } from '../models/RequestLog.js';
 
 const router = Router();
 
-router.get('/status', (req, res) => {
-  const clientId = req.ip || req.connection.remoteAddress;
-  const snapshot = demoTokenBucket.getBucketSnapshot(clientId);
+const getClientId = (req) => req.ip || req.connection.remoteAddress;
 
-  res.json({
-    message: 'Live token bucket status',
-    limit: snapshot.limit,
-    remaining: snapshot.remaining,
-    resetTime: snapshot.resetTime
-  });
+router.get('/status', async (req, res, next) => {
+  const clientId = getClientId(req);
+  try {
+    const snapshot = await demoTokenBucket.getBucketSnapshot(clientId);
+    res.json({
+      message: 'Live token bucket status',
+      limit: snapshot.limit,
+      remaining: snapshot.remaining,
+      availableTokens: snapshot.availableTokens,
+      resetTime: snapshot.resetTime,
+      store: snapshot.store
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.get('/ping', createTokenBucketMiddleware(demoTokenBucket), async (req, res) => {
@@ -32,6 +39,7 @@ router.get('/ping', createTokenBucketMiddleware(demoTokenBucket), async (req, re
     message: 'Pong from the token bucket rate-limited endpoint.',
     limit: req.rateLimit?.limit ?? null,
     remaining: req.rateLimit?.remaining ?? null,
+    availableTokens: req.rateLimit?.availableTokens ?? null,
     resetTime: req.rateLimit?.resetTime ?? null
   });
 });

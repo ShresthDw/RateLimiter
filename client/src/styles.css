@@ -35,16 +35,13 @@ button {
 }
 
 .shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
+  width: min(1120px, 100%);
+  margin: 0 auto;
   padding: 32px;
-  gap: 24px;
 }
 
 .hero,
 .panel {
-  width: min(960px, 100%);
   border: 1px solid rgba(148, 163, 184, 0.2);
   background: rgba(15, 23, 42, 0.72);
   backdrop-filter: blur(18px);
@@ -54,6 +51,7 @@ button {
 .hero {
   border-radius: 28px;
   padding: 40px;
+  margin-bottom: 24px;
 }
 
 .eyebrow {
@@ -82,6 +80,11 @@ h1 {
   border-radius: 24px;
   padding: 28px;
 }
+
+.dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; }
+.bucket-panel { min-height: 310px; }
+.panel-heading { display: flex; align-items: center; justify-content: space-between; color: #cbd5e1; font-weight: 700; }
+.store-badge { border-radius: 999px; padding: 4px 10px; background: rgba(56, 189, 248, 0.14); color: #7dd3fc; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; }
 
 .meter-card {
   margin-top: 20px;
@@ -117,6 +120,9 @@ h1 {
   margin: 0;
   color: #cbd5e1;
 }
+
+.bucket-panel .button { margin-top: 22px; }
+.result-message { margin: 14px 0 0; color: #cbd5e1; }
 
 .meter-track {
   margin-top: 16px;
@@ -194,6 +200,17 @@ h1 {
   word-break: break-word;
 }
 
+.metrics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.metric-card { min-height: 94px; border: 1px solid rgba(148, 163, 184, 0.18); border-radius: 18px; padding: 17px; background: rgba(15, 23, 42, 0.78); }
+.metric-card strong { font-size: clamp(1.25rem, 2.6vw, 1.8rem); }
+.metric-card.good strong { color: #86efac; }
+.metric-card.danger strong { color: #fda4af; }
+.config-panel { display: grid; grid-template-columns: 1fr minmax(320px, 0.9fr); gap: 28px; align-items: end; margin-top: 24px; }
+h2 { margin: 0 0 10px; }
+.rule-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: end; }
+.rule-form label { display: grid; gap: 7px; color: #cbd5e1; font-size: 0.85rem; }
+.rule-form input { width: 100%; border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 10px; padding: 11px; color: #f8fafc; background: rgba(15, 23, 42, 0.9); }
+
 @media (max-width: 640px) {
   .shell {
     padding: 18px;
@@ -204,4 +221,8 @@ h1 {
     border-radius: 20px;
     padding: 20px;
   }
+
+  .dashboard-grid,
+  .config-panel,
+  .rule-form { grid-template-columns: 1fr; }
 }

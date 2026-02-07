@@ -11,7 +11,10 @@ export const initRedis = async () => {
   }
 
   try {
-    redis = new Redis(redisUri);
+    redis = new Redis(redisUri, {
+      maxRetriesPerRequest: 1,
+      enableOfflineQueue: false
+    });
     redis.on('connect', () => console.log('Redis connected'));
     redis.on('error', (err) => console.error('Redis error:', err.message));
     return redis;

@@ -1,106 +1,134 @@
+import { getRateLimitRules } from '../config/rateLimitRules.js';
+import { getRedis } from '../config/redis.js';
+import { recordRateLimitDecision } from '../services/metrics.js';
+
+const redisConsumeScript = `
+  local now = tonumber(ARGV[1])
+  local capacity = tonumber(ARGV[2])
+  local refillInterval = tonumber(ARGV[3])
+  local tokens = tonumber(redis.call('HGET', KEYS[1], 'tokens')) or capacity
+  local lastRefill = tonumber(redis.call('HGET', KEYS[1], 'lastRefill')) or now
+  local elapsed = math.max(0, now - lastRefill)
+  local current = math.min(capacity, tokens + (elapsed * capacity / refillInterval))
+  local allowed = 0
+
+  if current >= 1 then
+    current = current - 1
+    allowed = 1
+  end
+
+  redis.call('HSET', KEYS[1], 'tokens', current, 'lastRefill', now)
+  redis.call('PEXPIRE', KEYS[1], math.max(refillInterval * 2, 60000))
+  return { allowed, current }
+`;
+
 class TokenBucket {
-  constructor(capacity, refillRate, refillInterval = 60000) {
-    this.capacity = capacity;
-    this.refillRate = refillRate;
-    this.refillInterval = refillInterval;
+  constructor(keyPrefix) {
+    this.keyPrefix = keyPrefix;
     this.buckets = new Map();
   }
 
-  getBucketSnapshot(clientId, now = Date.now()) {
-    let bucket = this.buckets.get(clientId);
+  getCurrentTokens(bucket, rules, now) {
+    const elapsedMs = Math.max(0, now - bucket.lastRefill);
+    return Math.min(rules.limit, bucket.tokens + (elapsedMs * rules.limit) / rules.windowMs);
+  }
 
-    if (!bucket) {
-      bucket = {
-        tokens: this.capacity,
-        lastRefill: now
-      };
-      this.buckets.set(clientId, bucket);
-    }
-
-    const currentTokens = this.getCurrentTokens(bucket, now);
-    const remaining = Math.floor(currentTokens);
-    const timeUntilNextToken = Math.max(0, this.msUntilNextToken(currentTokens));
+  getResult(tokens, rules, now) {
+    const remaining = Math.max(0, Math.floor(tokens));
+    const fractionalTokens = tokens % 1;
+    const tokensUntilNext = tokens >= 1 ? 1 - fractionalTokens : 1 - tokens;
+    const retryMs = Math.max(0, (tokensUntilNext * rules.windowMs) / rules.limit);
 
     return {
       remaining,
-      limit: this.capacity,
-      resetTime: new Date(now + timeUntilNextToken)
+      availableTokens: Number(tokens.toFixed(2)),
+      limit: rules.limit,
+      resetTime: new Date(now + retryMs)
     };
   }
 
-  getCurrentTokens(bucket, now) {
-    const elapsedMs = now - bucket.lastRefill;
-    const tokensPerMs = this.refillRate / this.refillInterval;
-    const replenishedTokens = elapsedMs * tokensPerMs;
+  async getBucketSnapshot(clientId, now = Date.now()) {
+    const rules = getRateLimitRules();
+    const redis = getRedis();
 
-    return Math.min(this.capacity, bucket.tokens + replenishedTokens);
-  }
-
-  msUntilNextToken(currentTokens) {
-    const tokensPerMs = this.refillRate / this.refillInterval;
-
-    if (currentTokens >= 1) {
-      return (1 - (currentTokens % 1)) / tokensPerMs;
+    if (redis?.status === 'ready') {
+      try {
+        const values = await redis.hmget(`${this.keyPrefix}:${clientId}`, 'tokens', 'lastRefill');
+        if (values[0] !== null && values[1] !== null) {
+          const currentTokens = this.getCurrentTokens(
+            { tokens: Number(values[0]), lastRefill: Number(values[1]) },
+            rules,
+            now
+          );
+          return { ...this.getResult(currentTokens, rules, now), store: 'redis' };
+        }
+        return { ...this.getResult(rules.limit, rules, now), store: 'redis' };
+      } catch (error) {
+        console.warn('Redis bucket snapshot failed; using memory fallback:', error.message);
+      }
     }
 
-    return (1 - currentTokens) / tokensPerMs;
+    const bucket = this.buckets.get(clientId) || { tokens: rules.limit, lastRefill: now };
+    const currentTokens = this.getCurrentTokens(bucket, rules, now);
+
+    this.buckets.set(clientId, { tokens: currentTokens, lastRefill: now });
+    return { ...this.getResult(currentTokens, rules, now), store: 'memory' };
   }
 
-  allowRequest(clientId) {
+  allowInMemory(clientId, rules, now) {
+    const bucket = this.buckets.get(clientId) || { tokens: rules.limit, lastRefill: now };
+    const currentTokens = this.getCurrentTokens(bucket, rules, now);
+    const allowed = currentTokens >= 1;
+    const tokens = allowed ? currentTokens - 1 : currentTokens;
+
+    this.buckets.set(clientId, { tokens, lastRefill: now });
+    return { allowed, ...this.getResult(tokens, rules, now), store: 'memory' };
+  }
+
+  async allowRequest(clientId) {
     const now = Date.now();
-    let bucket = this.buckets.get(clientId);
+    const rules = getRateLimitRules();
+    const redis = getRedis();
 
-    if (!bucket) {
-      bucket = {
-        tokens: this.capacity,
-        lastRefill: now
-      };
-      this.buckets.set(clientId, bucket);
+    if (redis?.status === 'ready') {
+      try {
+        const [allowedValue, tokensValue] = await redis.eval(
+          redisConsumeScript,
+          1,
+          `${this.keyPrefix}:${clientId}`,
+          now,
+          rules.limit,
+          rules.windowMs
+        );
+        const tokens = Number(tokensValue);
+        return { allowed: Number(allowedValue) === 1, ...this.getResult(tokens, rules, now), store: 'redis' };
+      } catch (error) {
+        console.warn('Redis rate-limit operation failed; using memory fallback:', error.message);
+      }
     }
 
-    const currentTokens = this.getCurrentTokens(bucket, now);
-    bucket.tokens = currentTokens;
-    bucket.lastRefill = now;
-
-    if (bucket.tokens >= 1) {
-      bucket.tokens -= 1;
-      const remaining = Math.floor(bucket.tokens);
-      const timeUntilNextToken = Math.max(0, this.msUntilNextToken(bucket.tokens));
-      const resetTime = new Date(now + timeUntilNextToken);
-
-      return {
-        allowed: true,
-        remaining,
-        limit: this.capacity,
-        resetTime
-      };
-    } else {
-      const timeUntilNextToken = Math.max(0, this.msUntilNextToken(bucket.tokens));
-      const resetTime = new Date(now + timeUntilNextToken);
-
-      return {
-        allowed: false,
-        remaining: 0,
-        limit: this.capacity,
-        resetTime
-      };
-    }
+    return this.allowInMemory(clientId, rules, now);
   }
 }
 
-export const apiTokenBucket = new TokenBucket(100, 100, 15 * 60 * 1000);
-export const demoTokenBucket = new TokenBucket(20, 20, 60 * 1000);
+export const demoTokenBucket = new TokenBucket('rate-limit:demo');
 
-export const createTokenBucketMiddleware = (bucket) => {
-  return (req, res, next) => {
-    const clientId = req.ip || req.connection.remoteAddress;
-    const result = bucket.allowRequest(clientId);
+export const createTokenBucketMiddleware = (bucket) => async (req, res, next) => {
+  const startedAt = performance.now();
+  const clientId = req.ip || req.socket.remoteAddress || 'unknown';
+
+  try {
+    const result = await bucket.allowRequest(clientId);
+    const responseTimeMs = performance.now() - startedAt;
+    recordRateLimitDecision({ clientId, allowed: result.allowed, responseTimeMs });
 
     req.rateLimit = {
       limit: result.limit,
       current: result.remaining,
       remaining: result.remaining,
-      resetTime: result.resetTime
+      availableTokens: result.availableTokens,
+      resetTime: result.resetTime,
+      store: result.store
     };
 
     res.setHeader('X-RateLimit-Limit', result.limit);
@@ -110,10 +138,12 @@ export const createTokenBucketMiddleware = (bucket) => {
     if (!result.allowed) {
       return res.status(429).json({
         message: 'Too many requests. Token bucket limit exceeded. Please try again later.',
-        retryAfter: Math.ceil((result.resetTime.getTime() - Date.now()) / 1000)
+        retryAfter: Math.max(1, Math.ceil((result.resetTime.getTime() - Date.now()) / 1000))
       });
     }
 
-    next();
-  };
+    return next();
+  } catch (error) {
+    return next(error);
+  }
 };
