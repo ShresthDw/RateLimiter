@@ -146,7 +146,7 @@ export const createTokenBucketMiddleware = (bucketOrProvider) => async (req, res
       algorithm: bucket.name
     };
 
-    if (process.env.MONGODB_URI) {
+    if (process.env.MONGO_URI || process.env.MONGODB_URI) {
       try {
         await RequestLog.create({
           ip: clientId,

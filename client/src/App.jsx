@@ -11,13 +11,12 @@ export default function App() {
   const [algorithms, setAlgorithms] = useState([]);
   const [draftRules, setDraftRules] = useState({ limit: 20, window: '1m' });
   const [message, setMessage] = useState('Ready to test the rate-limited endpoint.');
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const refreshDashboard = async () => {
     try {
-      const [statusResponse, dashboardResponse] = await Promise.all([fetch('/api/demo/status'), fetch('/api/dashboard')]);
+      const [statusResponse, dashboardResponse] = await Promise.all([fetch('/api/status'), fetch('/api/dashboard')]);
       const [status, dashboard] = await Promise.all([statusResponse.json(), dashboardResponse.json()]);
       if (!statusResponse.ok || !dashboardResponse.ok) throw new Error(status.message || dashboard.message || 'Dashboard refresh failed');
 
@@ -50,23 +49,6 @@ export default function App() {
     }
   };
 
-  const callApi = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const response = await fetch('/api/data');
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Request failed');
-      setMessage(data.message);
-      setBucket(data);
-    } catch (fetchError) {
-      setError(fetchError.message);
-    } finally {
-      setLoading(false);
-      refreshDashboard();
-    }
-  };
-
   const saveRules = async (event) => {
     event.preventDefault();
     setSaving(true);
@@ -92,8 +74,8 @@ export default function App() {
 
   useEffect(() => {
     refreshDashboard();
-    const intervalId = setInterval(refreshDashboard, 1000);
-    return () => clearInterval(intervalId);
+    const dashboardIntervalId = setInterval(refreshDashboard, 1000);
+    return () => clearInterval(dashboardIntervalId);
   }, []);
 
   const limit = bucket.limit ?? 0;
@@ -120,8 +102,7 @@ export default function App() {
             <strong className="mt-7 block text-4xl font-bold tracking-tight">{bucket.limit == null ? 'n/a' : `${availableTokens.toFixed(2)} / ${limit}`}</strong>
             <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-200" aria-hidden="true"><div className="h-full rounded-full bg-blue-600 transition-all duration-300" style={{ width: `${meterPercent}%` }} /></div>
             <p className="mt-2 text-sm text-slate-500">{availableTokens < 1 ? 'Bucket empty — wait for a continuous refill.' : `Next refill: ${bucket.resetTime ? new Date(bucket.resetTime).toLocaleTimeString() : 'loading...'}`}</p>
-            <button className="mt-5 rounded-md bg-blue-600 px-4 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-65" onClick={callApi} disabled={loading}>{loading ? 'Checking limit...' : 'GET /api/data'}</button>
-            <p className="mt-3 text-sm text-slate-500">{message}</p>
+            <p className="mt-5 text-sm text-slate-500">Live metrics update when StayHub traffic is routed through this gateway.</p>
           </article>
 
           <section className="grid grid-cols-2 gap-3" aria-label="API metrics">

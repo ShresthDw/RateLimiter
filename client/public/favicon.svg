@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Rate Limiter">
+  <rect width="64" height="64" rx="14" fill="#2563eb"/>
+  <path d="M17 21h30M17 32h30M17 43h30" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="24" cy="21" r="5" fill="#93c5fd"/>
+  <circle cx="40" cy="32" r="5" fill="#bfdbfe"/>
+  <circle cx="29" cy="43" r="5" fill="#dbeafe"/>
+</svg>

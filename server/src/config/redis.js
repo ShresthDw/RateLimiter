@@ -3,10 +3,10 @@ import Redis from 'ioredis';
 let redis;
 
 export const initRedis = async () => {
-  const redisUri = process.env.REDIS_URI;
+  const redisUri = process.env.REDIS_URL || process.env.REDIS_URI;
 
   if (!redisUri) {
-    console.warn('REDIS_URI is not set. Token bucket limiter will run in-memory mode.');
+    console.warn('REDIS_URL is not set. Token bucket limiter will run in-memory mode.');
     return null;
   }
 

@@ -1,11 +1,11 @@
 # MERN Token Bucket Rate Limiter
 
-A small MERN-style demo that protects Express API routes with an in-memory token bucket rate limiter and visualizes the current allowance in a React interface.
+A MERN-style API gateway that rate-limits requests before proxying them to a deployed StayHub backend, with a React dashboard for gateway metrics and rules.
 
 ## Features
 
 - Token bucket middleware keyed by client IP address
-- `GET /api/data` protected by a 20-token-per-minute bucket
+- `GET /api/proxy/*` protected by the active rate limiter and forwarded to StayHub
 - Continuous token refill (one token every three seconds)
 - `429 Too Many Requests` responses with rate-limit headers and retry time
 - Optional Redis storage for atomic, shared token buckets across API instances
@@ -14,6 +14,7 @@ A small MERN-style demo that protects Express API routes with an in-memory token
 - Algorithm selector for Token Bucket, Fixed Window, Sliding Window, and Leaky Bucket
 - Per-algorithm comparison metrics for allowed/blocked requests, decision latency, and estimated memory use
 - MongoDB decision logs containing IP, endpoint, algorithm, allow/block decision, remaining tokens, and time
+- Optional StayHub reverse proxy configured with `STAYHUB_API`
 - Optional MongoDB request logging with automatic 24-hour expiry
 
 ## Tech stack
@@ -39,12 +40,15 @@ npm install
 Optionally create `server/.env` to enable MongoDB logging:
 
 ```env
-MONGODB_URI=mongodb://127.0.0.1:27017/rate-limiter
-REDIS_URI=redis://127.0.0.1:6379
+MONGO_URI=mongodb://127.0.0.1:27017/rate-limiter
+REDIS_URL=redis://127.0.0.1:6379
 PORT=5050
+STAYHUB_API=https://your-stayhub-backend.example.com
 ```
 
-`MONGODB_URI` and `REDIS_URI` are optional. Without Redis, the limiter uses a process-local in-memory bucket; with Redis, each request uses an atomic Redis script so multiple server instances share the same bucket.
+`MONGO_URI`, `REDIS_URL`, and `STAYHUB_API` are optional. `MONGODB_URI` and `REDIS_URI` remain supported as backwards-compatible aliases. Without Redis, the limiter uses a process-local in-memory bucket; with Redis, each request uses an atomic Redis script so multiple server instances share the same bucket.
+
+The gateway forwards StayHub's incoming authentication headers and cookies unchanged. Do not configure a fixed user ID in the gateway: real visitors must retain their own identity.
 
 Start the client and server together:
 
@@ -68,15 +72,18 @@ Then open the Vite URL shown in the terminal (normally `http://localhost:5173`).
 | Method | Route | Description |
 | --- | --- | --- |
 | `GET` | `/api/health` | Returns `{ "status": "ok" }`. |
-| `GET` | `/api/data` | The Phase 1 protected endpoint. Starts at 20 tokens and returns `429` when empty. |
-| `GET` | `/api/demo/status` | Returns the current demo bucket state for the requesting IP. |
-| `GET` | `/api/demo/ping` | Consumes a demo token and returns the remaining allowance. |
+| `GET` | `/api/status` | Returns the current bucket state for the requesting IP. |
+| `GET` | `/api/analytics` | Returns gateway analytics. |
+| `GET` | `/api/metrics` | Returns gateway metrics. |
+| `GET` | `/api/rules` | Returns the active rate-limit rule and available algorithms. |
+| `POST` | `/api/rules` | Updates the active rate-limit rule. |
+| `ALL` | `/api/proxy/*` | Rate-limits and forwards the path after `/api/proxy` to `STAYHUB_API`. |
 | `GET` | `/api/dashboard` | Returns dashboard metrics and the current rule. |
 | `GET` | `/admin/rules` | Returns the active rate-limit rule. |
 | `POST` | `/admin/rules` | Updates the active rule; body example: `{ "limit": 100, "window": "1m" }`. |
 | `POST` | `/admin/algorithm` | Selects the active limiter; body example: `{ "algorithm": "sliding-window" }`. |
 
-`/api/demo/ping` has an additional bucket of 20 tokens per minute. A successful response includes `limit`, `remaining`, and `resetTime` in its JSON body.
+For example, `GET /api/proxy/api/rooms` is forwarded as `GET {STAYHUB_API}/api/rooms` after the active limiter allows it. This public endpoint is used by the dashboard demo, so no StayHub identity is required. A missing `STAYHUB_API` returns `503` rather than forwarding to an invalid target.
 
 Each limited response sets these headers:
 
@@ -107,6 +114,7 @@ client/                         React + Vite dashboard
   src/App.jsx                   Rate-limit UI
 server/
   src/middleware/tokenBucketLimiter.js  Token bucket implementation
-  src/routes/demoRoutes.js      Demo and status endpoints
+  src/proxy/proxy.js                   StayHub reverse proxy
+  src/routes/index.js                  Health, analytics, rules, and proxy routes
   src/models/RequestLog.js      Optional MongoDB request log model
 ```
