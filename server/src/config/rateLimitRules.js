@@ -11,6 +11,9 @@ let rules = {
   window: '1m'
 };
 
+const algorithms = ['token-bucket', 'fixed-window', 'sliding-window', 'leaky-bucket'];
+let activeAlgorithm = 'token-bucket';
+
 const parseWindow = (value) => {
   if (typeof value !== 'string') return null;
   const match = value.trim().match(/^(\d+)\s*(ms|s|m|h)$/i);
@@ -36,4 +39,15 @@ export const updateRateLimitRules = ({ limit, window }) => {
 
   rules = { limit: parsedLimit, windowMs, window: window.trim().toLowerCase() };
   return getRateLimitRules();
+};
+
+export const getActiveAlgorithm = () => activeAlgorithm;
+export const getAlgorithms = () => algorithms;
+
+export const updateActiveAlgorithm = (algorithm) => {
+  if (!algorithms.includes(algorithm)) {
+    throw new Error(`algorithm must be one of: ${algorithms.join(', ')}.`);
+  }
+  activeAlgorithm = algorithm;
+  return activeAlgorithm;
 };

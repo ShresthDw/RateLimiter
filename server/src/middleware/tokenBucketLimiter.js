@@ -1,6 +1,7 @@
 import { getRateLimitRules } from '../config/rateLimitRules.js';
 import { getRedis } from '../config/redis.js';
 import { recordRateLimitDecision } from '../services/metrics.js';
+import { RequestLog } from '../models/RequestLog.js';
 
 const redisConsumeScript = `
   local now = tonumber(ARGV[1])
@@ -22,9 +23,10 @@ const redisConsumeScript = `
   return { allowed, current }
 `;
 
-class TokenBucket {
+export class TokenBucket {
   constructor(keyPrefix) {
     this.keyPrefix = keyPrefix;
+    this.name = 'token-bucket';
     this.buckets = new Map();
   }
 
@@ -109,18 +111,30 @@ class TokenBucket {
 
     return this.allowInMemory(clientId, rules, now);
   }
+
+  getMemoryUsage() {
+    return this.buckets.size * 64;
+  }
 }
 
 export const demoTokenBucket = new TokenBucket('rate-limit:demo');
 
-export const createTokenBucketMiddleware = (bucket) => async (req, res, next) => {
+export const createTokenBucketMiddleware = (bucketOrProvider) => async (req, res, next) => {
   const startedAt = performance.now();
   const clientId = req.ip || req.socket.remoteAddress || 'unknown';
+  const bucket = typeof bucketOrProvider === 'function' ? bucketOrProvider() : bucketOrProvider;
 
   try {
     const result = await bucket.allowRequest(clientId);
     const responseTimeMs = performance.now() - startedAt;
-    recordRateLimitDecision({ clientId, allowed: result.allowed, responseTimeMs });
+    recordRateLimitDecision({
+      clientId,
+      algorithm: bucket.name,
+      allowed: result.allowed,
+      responseTimeMs,
+      memoryBytes: bucket.getMemoryUsage?.() ?? 0,
+      endpoint: req.originalUrl
+    });
 
     req.rateLimit = {
       limit: result.limit,
@@ -128,8 +142,24 @@ export const createTokenBucketMiddleware = (bucket) => async (req, res, next) =>
       remaining: result.remaining,
       availableTokens: result.availableTokens,
       resetTime: result.resetTime,
-      store: result.store
+      store: result.store,
+      algorithm: bucket.name
     };
+
+    if (process.env.MONGODB_URI) {
+      try {
+        await RequestLog.create({
+          ip: clientId,
+          endpoint: req.originalUrl,
+          algorithm: bucket.name,
+          allowed: result.allowed,
+          remainingTokens: result.remaining,
+          time: new Date()
+        });
+      } catch (error) {
+        console.warn('Request log skipped:', error.message);
+      }
+    }
 
     res.setHeader('X-RateLimit-Limit', result.limit);
     res.setHeader('X-RateLimit-Remaining', result.remaining);

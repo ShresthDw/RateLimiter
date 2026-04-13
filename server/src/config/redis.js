@@ -25,3 +25,13 @@ export const initRedis = async () => {
 };
 
 export const getRedis = () => redis;
+
+export const getRedisStatus = async () => {
+  if (!redis || redis.status !== 'ready') return { connected: false };
+  const startedAt = performance.now();
+  try {
+    await redis.ping();
+    const keys = await redis.dbsize();
+    return { connected: true, latencyMs: Number((performance.now() - startedAt).toFixed(2)), keys };
+  } catch { return { connected: false }; }
+};

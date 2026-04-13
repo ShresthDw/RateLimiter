@@ -6,11 +6,23 @@ const requestLogSchema = new mongoose.Schema(
       type: String,
       required: true
     },
-    route: {
+    endpoint: {
       type: String,
       required: true
     },
-    createdAt: {
+    algorithm: {
+      type: String,
+      required: true
+    },
+    allowed: {
+      type: Boolean,
+      required: true
+    },
+    remainingTokens: {
+      type: Number,
+      required: true
+    },
+    time: {
       type: Date,
       default: Date.now,
       expires: 60 * 60 * 24

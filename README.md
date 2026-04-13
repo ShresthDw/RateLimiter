@@ -11,6 +11,9 @@ A small MERN-style demo that protects Express API routes with an in-memory token
 - Optional Redis storage for atomic, shared token buckets across API instances
 - React dashboard for API calls, allowed/blocked decisions, active users, latency, and current bucket
 - Admin configuration panel that applies a new limit and refill window immediately
+- Algorithm selector for Token Bucket, Fixed Window, Sliding Window, and Leaky Bucket
+- Per-algorithm comparison metrics for allowed/blocked requests, decision latency, and estimated memory use
+- MongoDB decision logs containing IP, endpoint, algorithm, allow/block decision, remaining tokens, and time
 - Optional MongoDB request logging with automatic 24-hour expiry
 
 ## Tech stack
@@ -71,6 +74,7 @@ Then open the Vite URL shown in the terminal (normally `http://localhost:5173`).
 | `GET` | `/api/dashboard` | Returns dashboard metrics and the current rule. |
 | `GET` | `/admin/rules` | Returns the active rate-limit rule. |
 | `POST` | `/admin/rules` | Updates the active rule; body example: `{ "limit": 100, "window": "1m" }`. |
+| `POST` | `/admin/algorithm` | Selects the active limiter; body example: `{ "algorithm": "sliding-window" }`. |
 
 `/api/demo/ping` has an additional bucket of 20 tokens per minute. A successful response includes `limit`, `remaining`, and `resetTime` in its JSON body.
 
@@ -83,6 +87,12 @@ X-RateLimit-Reset
 ```
 
 When a bucket has no token available, the API responds with HTTP `429` and a JSON `retryAfter` value in seconds.
+
+## Algorithm comparison and logging
+
+Use the dashboard dropdown (or `POST /admin/algorithm`) to switch between `token-bucket`, `fixed-window`, `sliding-window`, and `leaky-bucket`. The comparison table collects results for requests made while each algorithm is selected. Token Bucket uses Redis when `REDIS_URI` is set; the other comparison implementations are in-memory for demonstration.
+
+When `MONGODB_URI` is set, every request that reaches a protected endpoint is stored in the `requestlogs` collection with `ip`, `endpoint`, `algorithm`, `allowed`, `remainingTokens`, and `time`. Logs expire automatically after 24 hours.
 
 ## How the token bucket works
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { demoTokenBucket, createTokenBucketMiddleware } from '../middleware/tokenBucketLimiter.js';
-import { RequestLog } from '../models/RequestLog.js';
+import { createTokenBucketMiddleware } from '../middleware/tokenBucketLimiter.js';
+import { getActiveLimiter } from '../services/rateLimiters.js';
 
 const router = Router();
 
@@ -9,32 +9,23 @@ const getClientId = (req) => req.ip || req.connection.remoteAddress;
 router.get('/status', async (req, res, next) => {
   const clientId = getClientId(req);
   try {
-    const snapshot = await demoTokenBucket.getBucketSnapshot(clientId);
+    const limiter = getActiveLimiter();
+    const snapshot = await limiter.getBucketSnapshot(clientId);
     res.json({
       message: 'Live token bucket status',
       limit: snapshot.limit,
       remaining: snapshot.remaining,
       availableTokens: snapshot.availableTokens,
       resetTime: snapshot.resetTime,
-      store: snapshot.store
+      store: snapshot.store,
+      algorithm: limiter.name
     });
   } catch (error) {
     next(error);
   }
 });
 
-router.get('/ping', createTokenBucketMiddleware(demoTokenBucket), async (req, res) => {
-  if (process.env.MONGODB_URI) {
-    try {
-      await RequestLog.create({
-        ip: req.ip,
-        route: '/api/demo/ping'
-      });
-    } catch (error) {
-      console.warn('Request log skipped:', error.message);
-    }
-  }
-
+router.get('/ping', createTokenBucketMiddleware(getActiveLimiter), async (req, res) => {
   res.json({
     message: 'Pong from the token bucket rate-limited endpoint.',
     limit: req.rateLimit?.limit ?? null,
