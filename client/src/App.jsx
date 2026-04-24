@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 
 const initialBucket = { remaining: null, availableTokens: null, limit: null, resetTime: null, store: 'memory' };
 const initialMetrics = { total: 0, allowed: 0, blocked: 0, activeUsers: 0, averageResponseTimeMs: 0 };
+const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const apiUrl = (path) => `${API_BASE_URL}${path}`;
 
 export default function App() {
   const [bucket, setBucket] = useState(initialBucket);
@@ -16,7 +18,7 @@ export default function App() {
 
   const refreshDashboard = async () => {
     try {
-      const [statusResponse, dashboardResponse] = await Promise.all([fetch('/api/status'), fetch('/api/dashboard')]);
+      const [statusResponse, dashboardResponse] = await Promise.all([fetch(apiUrl('/api/status')), fetch(apiUrl('/api/dashboard'))]);
       const [status, dashboard] = await Promise.all([statusResponse.json(), dashboardResponse.json()]);
       if (!statusResponse.ok || !dashboardResponse.ok) throw new Error(status.message || dashboard.message || 'Dashboard refresh failed');
 
@@ -34,7 +36,7 @@ export default function App() {
   const selectAlgorithm = async (algorithm) => {
     setError('');
     try {
-      const response = await fetch('/admin/algorithm', {
+      const response = await fetch(apiUrl('/admin/algorithm'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ algorithm })
@@ -54,7 +56,7 @@ export default function App() {
     setSaving(true);
     setError('');
     try {
-      const response = await fetch('/admin/rules', {
+      const response = await fetch(apiUrl('/admin/rules'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...draftRules, limit: Number(draftRules.limit) })

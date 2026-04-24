@@ -14,6 +14,16 @@ export const stayHubProxy = createProxyMiddleware({
       if (authorization) proxyReq.setHeader('authorization', authorization);
       fixRequestBody(proxyReq, req, res);
     },
+    proxyRes: (_proxyRes, req, res) => {
+      const origin = req.headers.origin;
+      if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Vary', 'Origin');
+      } else {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+      }
+    },
     error: (error, _req, res) => {
       if (!res.headersSent) res.status(502).json({ message: 'StayHub backend is unavailable.', detail: error.message });
     }
