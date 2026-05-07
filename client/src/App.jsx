@@ -1,50 +1,92 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 
-const initialBucket = { remaining: null, availableTokens: null, limit: null, resetTime: null, store: 'memory' };
-const initialMetrics = { total: 0, allowed: 0, blocked: 0, activeUsers: 0, averageResponseTimeMs: 0 };
-const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const API_BASE_URL = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 const apiUrl = (path) => `${API_BASE_URL}${path}`;
 
+const emptyMetrics = {
+  total: 0,
+  allowed: 0,
+  blocked: 0,
+  activeUsers: 0,
+  averageResponseTimeMs: 0,
+  blockedRate: 0,
+  peakRps: 0,
+  requestSeries: [],
+  recentRequests: [],
+  topBlockedIps: [],
+  algorithms: {},
+  redis: { connected: false },
+};
+
+const navItems = [
+  ["dashboard", "Dashboard", "⌂"],
+  ["apis", "Protected APIs", "▣"],
+  ["policies", "Policies", "◇"],
+  ["analytics", "Analytics", "◒"],
+  ["clients", "Clients", "♙"],
+  ["traffic", "Live Traffic", "↗"],
+  ["logs", "Logs", "≡"],
+  ["health", "System Health", "♥"],
+  ["settings", "Settings", "⚙"],
+];
+
 export default function App() {
-  const [bucket, setBucket] = useState(initialBucket);
-  const [metrics, setMetrics] = useState(initialMetrics);
-  const [rules, setRules] = useState({ limit: 20, window: '1m' });
-  const [activeAlgorithm, setActiveAlgorithm] = useState('token-bucket');
+  const [bucket, setBucket] = useState({
+    remaining: null,
+    availableTokens: null,
+    limit: null,
+    store: "memory",
+  });
+  const [metrics, setMetrics] = useState(emptyMetrics);
+  const [rules, setRules] = useState({ limit: 20, window: "1m" });
+  const [activeAlgorithm, setActiveAlgorithm] = useState("token-bucket");
   const [algorithms, setAlgorithms] = useState([]);
-  const [draftRules, setDraftRules] = useState({ limit: 20, window: '1m' });
-  const [message, setMessage] = useState('Ready to test the rate-limited endpoint.');
+  const [draftRules, setDraftRules] = useState({ limit: 20, window: "1m" });
+  const [activeSection, setActiveSection] = useState("dashboard");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const refreshDashboard = async () => {
     try {
-      const [statusResponse, dashboardResponse] = await Promise.all([fetch(apiUrl('/api/status')), fetch(apiUrl('/api/dashboard'))]);
-      const [status, dashboard] = await Promise.all([statusResponse.json(), dashboardResponse.json()]);
-      if (!statusResponse.ok || !dashboardResponse.ok) throw new Error(status.message || dashboard.message || 'Dashboard refresh failed');
-
+      const [statusResponse, dashboardResponse] = await Promise.all([
+        fetch(apiUrl("/api/status")),
+        fetch(apiUrl("/api/dashboard")),
+      ]);
+      const [status, dashboard] = await Promise.all([
+        statusResponse.json(),
+        dashboardResponse.json(),
+      ]);
+      if (!statusResponse.ok || !dashboardResponse.ok)
+        throw new Error(
+          status.message || dashboard.message || "Dashboard refresh failed",
+        );
       setBucket(status);
-      setMetrics({ ...dashboard.metrics, redis: dashboard.redis });
+      setMetrics({
+        ...emptyMetrics,
+        ...dashboard.metrics,
+        redis: dashboard.redis,
+      });
       setRules(dashboard.rules);
       setActiveAlgorithm(dashboard.activeAlgorithm);
       setAlgorithms(dashboard.algorithms);
-      setDraftRules((current) => (current.limit === dashboard.rules.limit && current.window === dashboard.rules.window ? current : dashboard.rules));
+      setError("");
     } catch (fetchError) {
       setError(fetchError.message);
     }
   };
 
   const selectAlgorithm = async (algorithm) => {
-    setError('');
+    setError("");
     try {
-      const response = await fetch(apiUrl('/admin/algorithm'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ algorithm })
+      const response = await fetch(apiUrl("/admin/algorithm"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ algorithm }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Could not change algorithm');
+      if (!response.ok)
+        throw new Error(data.message || "Could not change algorithm");
       setActiveAlgorithm(data.activeAlgorithm);
-      setMessage(`${formatAlgorithm(data.activeAlgorithm)} is now active.`);
       refreshDashboard();
     } catch (fetchError) {
       setError(fetchError.message);
@@ -54,18 +96,21 @@ export default function App() {
   const saveRules = async (event) => {
     event.preventDefault();
     setSaving(true);
-    setError('');
+    setError("");
     try {
-      const response = await fetch(apiUrl('/admin/rules'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...draftRules, limit: Number(draftRules.limit) })
+      const response = await fetch(apiUrl("/admin/rules"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...draftRules,
+          limit: Number(draftRules.limit),
+        }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Could not update rules');
+      if (!response.ok)
+        throw new Error(data.message || "Could not update rules");
       setRules(data);
       setDraftRules({ limit: data.limit, window: data.window });
-      setMessage('Rate-limit rules updated without restarting the server.');
       refreshDashboard();
     } catch (fetchError) {
       setError(fetchError.message);
@@ -76,97 +121,545 @@ export default function App() {
 
   useEffect(() => {
     refreshDashboard();
-    const dashboardIntervalId = setInterval(refreshDashboard, 1000);
-    return () => clearInterval(dashboardIntervalId);
+    const interval = setInterval(refreshDashboard, 3000);
+    return () => clearInterval(interval);
   }, []);
 
-  const limit = bucket.limit ?? 0;
+  const endpointStats = useMemo(() => {
+    const stats = new Map();
+    metrics.recentRequests.forEach((request) => {
+      const current = stats.get(request.endpoint) || {
+        endpoint: request.endpoint,
+        requests: 0,
+        blocked: 0,
+      };
+      current.requests += 1;
+      if (!request.allowed) current.blocked += 1;
+      stats.set(request.endpoint, current);
+    });
+    return [...stats.values()].sort((a, b) => b.requests - a.requests);
+  }, [metrics.recentRequests]);
+
   const availableTokens = bucket.availableTokens ?? 0;
-  const meterPercent = limit ? Math.max(0, Math.min(100, (availableTokens / limit) * 100)) : 0;
+  const limit = bucket.limit ?? rules.limit;
+  const meterPercent = limit
+    ? Math.max(0, Math.min(100, (availableTokens / limit) * 100))
+    : 0;
+  const gatewayHealthy = !error;
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-800">
-      <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
-        <header className="mb-6">
-          <p className="mb-1 text-xs font-bold uppercase tracking-wider text-slate-500">Rate limiter dashboard</p>
-          <h1 className="text-3xl font-bold tracking-tight">API rate limiting</h1>
-          <p className="mt-2 text-slate-500">Monitor the token bucket and update the active rule.</p>
-        </header>
-
-        {error ? <p className="mb-5 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-red-700">{error}</p> : null}
-
-        <section className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
-          <article className="rounded-lg border border-slate-200 bg-white p-6">
-            <div className="flex items-center justify-between font-semibold text-slate-700">
-              <span>Current bucket</span>
-              <span className="rounded border border-slate-300 px-2 py-0.5 text-xs font-medium uppercase text-slate-600">{bucket.store}</span>
+    <main className="min-h-screen bg-slate-100 text-slate-800">
+      <div className="flex min-h-screen">
+        <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col bg-slate-950 text-slate-300 lg:flex">
+          <div className="border-b border-slate-800 px-5 py-5">
+            <div className="flex items-center gap-2 text-white">
+              <span className="grid h-7 w-7 place-items-center rounded bg-blue-600 text-sm font-bold">
+                AG
+              </span>
+              <span className="font-semibold tracking-tight">API Gateway</span>
             </div>
-            <strong className="mt-7 block text-4xl font-bold tracking-tight">{bucket.limit == null ? 'n/a' : `${availableTokens.toFixed(2)} / ${limit}`}</strong>
-            <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-200" aria-hidden="true"><div className="h-full rounded-full bg-blue-600 transition-all duration-300" style={{ width: `${meterPercent}%` }} /></div>
-            <p className="mt-2 text-sm text-slate-500">{availableTokens < 1 ? 'Bucket empty — wait for a continuous refill.' : `Next refill: ${bucket.resetTime ? new Date(bucket.resetTime).toLocaleTimeString() : 'loading...'}`}</p>
-            <p className="mt-5 text-sm text-slate-500">Live metrics update when StayHub traffic is routed through this gateway.</p>
-          </article>
-
-          <section className="grid grid-cols-2 gap-3" aria-label="API metrics">
-            <Metric label="API calls" value={metrics.total} />
-            <Metric label="Allowed" value={metrics.allowed} tone="text-green-700" />
-            <Metric label="Blocked" value={metrics.blocked} tone="text-red-600" />
-            <Metric label="Active users" value={metrics.activeUsers} />
-            <Metric label="Average decision" value={`${metrics.averageResponseTimeMs} ms`} />
-            <Metric label="Current rule" value={`${rules.limit}/${rules.window}`} />
-          </section>
-        </section>
-
-        <section className="mt-5 grid gap-5 lg:grid-cols-2">
-          <article className="rounded-lg border border-slate-200 bg-white p-6"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Live requests</p><h2 className="mt-1 text-xl font-bold">Requests per second</h2><RequestGraph points={metrics.requestSeries || []} /><p className="mt-2 text-sm text-slate-500">Peak: {metrics.peakRps ?? 0} RPS</p></article>
-          <article className="rounded-lg border border-slate-200 bg-white p-6"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Redis status</p><h2 className="mt-1 text-xl font-bold">{metrics.redis?.connected ? '🟢 Redis connected' : '⚪ In-memory mode'}</h2><div className="mt-5 grid grid-cols-2 gap-3 text-sm"><div><span className="text-slate-500">Latency</span><strong className="block text-lg">{metrics.redis?.latencyMs ?? '—'} ms</strong></div><div><span className="text-slate-500">Keys</span><strong className="block text-lg">{metrics.redis?.keys ?? '—'}</strong></div><div><span className="text-slate-500">Blocked rate</span><strong className="block text-lg">{metrics.blockedRate ?? 0}%</strong></div><div><span className="text-slate-500">Peak RPS</span><strong className="block text-lg">{metrics.peakRps ?? 0}</strong></div></div></article>
-        </section>
-
-        <section className="mt-5 grid gap-5 lg:grid-cols-[.8fr_1.2fr]">
-          <article className="rounded-lg border border-slate-200 bg-white p-6"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Top blocked IPs</p><h2 className="mt-1 text-xl font-bold">Blocked clients</h2><div className="mt-4 space-y-3">{(metrics.topBlockedIps || []).length ? metrics.topBlockedIps.map((item) => <div key={item.ip} className="flex justify-between border-b border-slate-100 pb-2 text-sm"><span>{item.ip}</span><strong className="text-red-600">{item.blocked} blocked</strong></div>) : <p className="text-sm text-slate-500">No blocked requests yet.</p>}</div></article>
-          <article className="overflow-hidden rounded-lg border border-slate-200 bg-white p-6"><p className="text-xs font-bold uppercase tracking-wider text-slate-500">Recent requests</p><h2 className="mt-1 text-xl font-bold">Latest decisions</h2><div className="mt-4 overflow-x-auto"><table className="w-full min-w-[500px] text-left text-sm"><thead className="text-xs text-slate-500"><tr><th className="pb-2">Time</th><th className="pb-2">IP</th><th className="pb-2">Endpoint</th><th className="pb-2">Status</th></tr></thead><tbody>{(metrics.recentRequests || []).map((item, index) => <tr key={`${item.time}-${index}`} className="border-t border-slate-100"><td className="py-2">{new Date(item.time).toLocaleTimeString()}</td><td>{item.ip}</td><td>{item.endpoint}</td><td className={item.allowed ? 'text-green-700' : 'text-red-600'}>{item.allowed ? 'Allowed' : '429 Blocked'}</td></tr>)}</tbody></table></div></article>
-        </section>
-
-        <section className="mt-5 rounded-lg border border-slate-200 bg-white p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div><p className="mb-1 text-xs font-bold uppercase tracking-wider text-slate-500">Algorithm comparison</p><h2 className="text-xl font-bold">Choose the active limiter</h2></div>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-600">Algorithm
-              <select className="min-w-52 rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-800 outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100" value={activeAlgorithm} onChange={(event) => selectAlgorithm(event.target.value)}>
-                {algorithms.map((algorithm) => <option key={algorithm} value={algorithm}>{formatAlgorithm(algorithm)}</option>)}
-              </select>
-            </label>
           </div>
-          <div className="mt-5 overflow-x-auto">
-            <table className="w-full min-w-[600px] text-left text-sm">
-              <thead className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-3 py-2">Algorithm</th><th className="px-3 py-2">Allowed</th><th className="px-3 py-2">Blocked</th><th className="px-3 py-2">Latency</th><th className="px-3 py-2">Memory</th></tr></thead>
-              <tbody>{algorithms.map((algorithm) => { const item = metrics.algorithms?.[algorithm] || {}; return <tr key={algorithm} className="border-b border-slate-100 last:border-0"><td className="px-3 py-3 font-medium text-slate-700">{formatAlgorithm(algorithm)}{algorithm === activeAlgorithm ? <span className="ml-2 rounded bg-blue-50 px-2 py-1 text-xs text-blue-700">Active</span> : null}</td><td className="px-3 py-3 text-green-700">{item.allowed ?? 0}</td><td className="px-3 py-3 text-red-600">{item.blocked ?? 0}</td><td className="px-3 py-3">{item.averageLatencyMs ?? 0} ms</td><td className="px-3 py-3">{item.memoryBytes ?? 0} B</td></tr>; })}</tbody>
-            </table>
-          </div>
-        </section>
+          <nav
+            className="flex-1 space-y-1 px-3 py-4"
+            aria-label="Gateway navigation"
+          >
+            {navItems.map(([id, label, icon]) => (
+              <button
+                key={id}
+                onClick={() => navigateToSection(id, setActiveSection)}
+                className={`flex w-full items-center gap-3 rounded px-3 py-2 text-left text-sm transition ${
+                  activeSection === id
+                    ? "bg-blue-600 text-white"
+                    : "hover:bg-slate-900 hover:text-white"
+                }`}
+              >
+                <span className="w-4 text-center text-base">{icon}</span>
+                {label}
+              </button>
+            ))}
+          </nav>
+        </aside>
 
-        <section className="mt-5 grid gap-7 rounded-lg border border-slate-200 bg-white p-6 md:grid-cols-[1fr_.9fr] md:items-end">
-          <div><p className="mb-1 text-xs font-bold uppercase tracking-wider text-slate-500">Configuration</p><h2 className="text-xl font-bold">Active rule</h2><p className="mt-2 text-sm text-slate-500">Changes apply to new requests immediately.</p></div>
-          <form className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end" onSubmit={saveRules}>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-600">Limit<input className="rounded-md border border-slate-300 px-3 py-2 text-slate-800 outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100" type="number" min="1" max="100000" value={draftRules.limit} onChange={(e) => setDraftRules((current) => ({ ...current, limit: e.target.value }))} /></label>
-            <label className="grid gap-1.5 text-sm font-semibold text-slate-600">Window<input className="rounded-md border border-slate-300 px-3 py-2 text-slate-800 outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100" value={draftRules.window} onChange={(e) => setDraftRules((current) => ({ ...current, window: e.target.value }))} placeholder="1m" /></label>
-            <button className="rounded-md bg-blue-600 px-4 py-2.5 font-semibold text-white hover:bg-blue-700 disabled:cursor-wait disabled:opacity-65" disabled={saving}>{saving ? 'Saving...' : 'Save rules'}</button>
-          </form>
+        <section className="min-w-0 flex-1">
+          <header className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3 lg:px-7">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                StayHub / gateway
+              </p>
+              <h1 className="text-lg font-semibold text-slate-900">
+                {formatSection(activeSection)}
+              </h1>
+            </div>
+            <div className="flex items-center gap-4 text-xs">
+              <span
+                className={`flex items-center gap-2 font-medium ${
+                  gatewayHealthy ? "text-emerald-600" : "text-red-600"
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    gatewayHealthy ? "bg-emerald-500" : "bg-red-500"
+                  }`}
+                />
+                {gatewayHealthy ? "Healthy" : "Attention required"}
+              </span>
+            </div>
+          </header>
+
+          <div className="mx-auto max-w-[1400px] space-y-4 p-4 lg:p-6">
+            {error ? (
+              <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
+              </div>
+            ) : null}
+
+            <section
+              id="dashboard"
+              className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
+            >
+              <StatCard
+                label="Total requests"
+                value={formatNumber(metrics.total)}
+              />
+              <StatCard
+                label="Allowed requests"
+                value={formatNumber(metrics.allowed)}
+                tone="text-emerald-600"
+              />
+              <StatCard
+                label="Blocked requests"
+                value={formatNumber(metrics.blocked)}
+                tone="text-red-600"
+              />
+              <StatCard
+                label="Active clients"
+                value={formatNumber(metrics.activeUsers)}
+              />
+              <StatCard
+                label="Avg. response"
+                value={`${metrics.averageResponseTimeMs} ms`}
+              />
+            </section>
+
+            <section className="grid gap-4 xl:grid-cols-[1.35fr_.85fr]">
+              <article className="rounded border border-slate-200 bg-white p-4 shadow-sm">
+                <SectionTitle
+                  eyebrow="Traffic overview"
+                  title="Requests per second"
+                />
+                <RequestGraph points={metrics.requestSeries} />
+                <div className="mt-2 flex justify-between text-xs text-slate-500">
+                  <span>Last 60 seconds</span>
+                  <span>Peak {metrics.peakRps} RPS</span>
+                </div>
+              </article>
+              <article
+                id="apis"
+                className="rounded border border-slate-200 bg-white p-4 shadow-sm"
+              >
+                <SectionTitle eyebrow="Protected service" title="StayHub API" />
+                <div className="mt-4 space-y-3 text-sm">
+                  <InfoRow
+                    label="Backend URL"
+                    value={
+                      import.meta.env.VITE_STAYHUB_API ||
+                      "Configured in gateway"
+                    }
+                  />
+                  <InfoRow
+                    label="Gateway status"
+                    value="Running"
+                    tone="text-emerald-600"
+                  />
+                  <InfoRow
+                    label="Rate-limit store"
+                    value={bucket.store === "redis" ? "Redis" : "In-memory"}
+                  />
+                  <InfoRow label="Protected route" value="/api/proxy/*" mono />
+                </div>
+              </article>
+            </section>
+
+            <section className="grid gap-4 lg:grid-cols-3">
+              <article
+                id="health"
+                className="rounded border border-slate-200 bg-white p-4 shadow-sm"
+              >
+                <SectionTitle eyebrow="System health" title="Dependencies" />
+                <div className="mt-3 space-y-2">
+                  <HealthRow label="Gateway" healthy={gatewayHealthy} />
+                  <HealthRow
+                    label="Redis"
+                    healthy={metrics.redis?.connected}
+                    detail={
+                      metrics.redis?.latencyMs
+                        ? `${metrics.redis.latencyMs} ms`
+                        : "Not connected"
+                    }
+                  />
+                  <HealthRow
+                    label="MongoDB logs"
+                    healthy={true}
+                    detail="Optional"
+                  />
+                  <HealthRow
+                    label="StayHub upstream"
+                    healthy={true}
+                    detail="Configured"
+                  />
+                </div>
+              </article>
+              <article
+                id="analytics"
+                className="rounded border border-slate-200 bg-white p-4 shadow-sm"
+              >
+                <SectionTitle eyebrow="Analytics" title="Traffic summary" />
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <MiniStat
+                    label="Blocked rate"
+                    value={`${metrics.blockedRate}%`}
+                    tone="text-red-600"
+                  />
+                  <MiniStat label="Peak RPS" value={metrics.peakRps} />
+                  <MiniStat
+                    label="Algorithm"
+                    value={formatAlgorithm(activeAlgorithm)}
+                  />
+                  <MiniStat
+                    label="Redis keys"
+                    value={metrics.redis?.keys ?? "—"}
+                  />
+                </div>
+              </article>
+              <article
+                id="settings"
+                className="rounded border border-slate-200 bg-white p-4 shadow-sm"
+              >
+                <SectionTitle eyebrow="Settings" title="Active policy" />
+                <PolicyForm
+                  draftRules={draftRules}
+                  setDraftRules={setDraftRules}
+                  saveRules={saveRules}
+                  saving={saving}
+                />
+              </article>
+            </section>
+
+            <section className="grid gap-4 xl:grid-cols-[.9fr_1.1fr]">
+              <article
+                id="policies"
+                className="rounded border border-slate-200 bg-white p-4 shadow-sm"
+              >
+                <SectionTitle eyebrow="Policies" title="Rate limiting policy" />
+                <div className="mt-3 space-y-3">
+                  <InfoRow
+                    label="Algorithm"
+                    value={formatAlgorithm(activeAlgorithm)}
+                  />
+                  <InfoRow
+                    label="Default limit"
+                    value={`${rules.limit} requests / ${rules.window}`}
+                  />
+                  <label className="grid gap-1 text-xs font-medium text-slate-600">
+                    Active algorithm
+                    <select
+                      className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                      value={activeAlgorithm}
+                      onChange={(event) => selectAlgorithm(event.target.value)}
+                    >
+                      {algorithms.map((algorithm) => (
+                        <option key={algorithm} value={algorithm}>
+                          {formatAlgorithm(algorithm)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </article>
+              <article
+                id="clients"
+                className="rounded border border-slate-200 bg-white p-4 shadow-sm"
+              >
+                <SectionTitle eyebrow="Clients" title="Most blocked clients" />
+                <CompactTable
+                  headers={["Client", "Requests blocked", "Status"]}
+                  rows={metrics.topBlockedIps.map((item) => [
+                    item.ip,
+                    item.blocked,
+                    "Rate limited",
+                  ])}
+                  empty="No blocked clients recorded."
+                />
+              </article>
+            </section>
+
+            <section
+              id="traffic"
+              className="rounded border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <SectionTitle
+                eyebrow="Live traffic / logs"
+                title="Recent gateway decisions"
+              />
+              <CompactTable
+                headers={["Time", "Endpoint", "Client", "Algorithm", "Status"]}
+                rows={metrics.recentRequests.map((item) => [
+                  new Date(item.time).toLocaleTimeString(),
+                  item.endpoint,
+                  item.ip,
+                  formatAlgorithm(item.algorithm),
+                  item.allowed ? "200 Allowed" : "429 Blocked",
+                ])}
+                empty="No gateway traffic recorded yet."
+              />
+            </section>
+
+            <section className="grid gap-4 lg:grid-cols-2">
+              <article className="rounded border border-slate-200 bg-white p-4 shadow-sm">
+                <SectionTitle
+                  eyebrow="Protected APIs"
+                  title="Top requested endpoints"
+                />
+                <CompactTable
+                  headers={["Endpoint", "Requests", "Blocked"]}
+                  rows={endpointStats.map((item) => [
+                    item.endpoint,
+                    item.requests,
+                    item.blocked,
+                  ])}
+                  empty="Traffic will appear when StayHub requests use the gateway."
+                />
+              </article>
+              <article
+                id="logs"
+                className="rounded border border-slate-200 bg-white p-4 shadow-sm"
+              >
+                <SectionTitle
+                  eyebrow="Algorithm comparison"
+                  title="Limiter performance"
+                />
+                <CompactTable
+                  headers={["Algorithm", "Allowed", "Blocked", "Latency"]}
+                  rows={algorithms.map((algorithm) => {
+                    const item = metrics.algorithms?.[algorithm] || {};
+                    return [
+                      formatAlgorithm(algorithm),
+                      item.allowed ?? 0,
+                      item.blocked ?? 0,
+                      `${item.averageLatencyMs ?? 0} ms`,
+                    ];
+                  })}
+                  empty="No limiter decisions recorded yet."
+                />
+              </article>
+            </section>
+          </div>
         </section>
       </div>
     </main>
   );
 }
 
-function Metric({ label, value, tone = 'text-slate-800' }) {
-  return <article className="min-h-[104px] rounded-lg border border-slate-200 bg-white p-4"><span className="block text-xs font-semibold text-slate-500">{label}</span><strong className={`mt-2 block text-2xl font-bold tracking-tight ${tone}`}>{value}</strong></article>;
+function SectionTitle({ eyebrow, title }) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+        {eyebrow}
+      </p>
+      <h2 className="mt-1 text-sm font-semibold text-slate-900">{title}</h2>
+    </div>
+  );
 }
 
-function formatAlgorithm(algorithm) {
-  return algorithm.split('-').map((word) => word[0].toUpperCase() + word.slice(1)).join(' ');
+function StatCard({ label, value, tone = "text-slate-900" }) {
+  return (
+    <article className="rounded border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <p className="text-[11px] font-medium text-slate-500">{label}</p>
+      <p className={`mt-1 text-xl font-semibold tracking-tight ${tone}`}>
+        {value}
+      </p>
+    </article>
+  );
+}
+
+function MiniStat({ label, value, tone = "text-slate-900" }) {
+  return (
+    <div className="rounded bg-slate-50 p-2.5">
+      <p className="text-[10px] uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <p className={`mt-1 text-sm font-semibold ${tone}`}>{value}</p>
+    </div>
+  );
+}
+
+function InfoRow({ label, value, tone = "text-slate-800", mono = false }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+      <span className="text-xs text-slate-500">{label}</span>
+      <span
+        className={`text-right text-xs font-medium ${tone} ${mono ? "font-mono" : ""}`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function HealthRow({ label, healthy, detail }) {
+  return (
+    <div className="flex items-center justify-between border-b border-slate-100 pb-2 last:border-0 last:pb-0">
+      <span className="flex items-center gap-2 text-xs font-medium text-slate-700">
+        <span
+          className={`h-2 w-2 rounded-full ${healthy ? "bg-emerald-500" : "bg-amber-400"}`}
+        />
+        {label}
+      </span>
+      <span
+        className={`text-[11px] ${healthy ? "text-emerald-600" : "text-amber-600"}`}
+      >
+        {detail || (healthy ? "Healthy" : "Unavailable")}
+      </span>
+    </div>
+  );
+}
+
+function PolicyForm({ draftRules, setDraftRules, saveRules, saving }) {
+  return (
+    <form className="mt-3 grid min-w-0 grid-cols-2 gap-2" onSubmit={saveRules}>
+      <label className="grid min-w-0 gap-1 text-[11px] font-medium text-slate-600">
+        Limit
+        <input
+          className="w-full min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm"
+          type="number"
+          min="1"
+          max="100000"
+          value={draftRules.limit}
+          onChange={(event) =>
+            setDraftRules((current) => ({
+              ...current,
+              limit: event.target.value,
+            }))
+          }
+        />
+      </label>
+      <label className="grid min-w-0 gap-1 text-[11px] font-medium text-slate-600">
+        Window
+        <input
+          className="w-full min-w-0 rounded border border-slate-300 px-2 py-1.5 text-sm"
+          value={draftRules.window}
+          onChange={(event) =>
+            setDraftRules((current) => ({
+              ...current,
+              window: event.target.value,
+            }))
+          }
+          placeholder="1m"
+        />
+      </label>
+      <button
+        className="col-span-2 rounded bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+        disabled={saving}
+      >
+        {saving ? "Saving..." : "Save policy"}
+      </button>
+    </form>
+  );
+}
+
+function CompactTable({ headers, rows, empty }) {
+  if (!rows.length) {
+    return (
+      <p className="mt-3 rounded bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+        {empty}
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-3 overflow-x-auto">
+      <table className="w-full text-left text-xs">
+        <thead className="border-b border-slate-200 text-[10px] uppercase tracking-wide text-slate-400">
+          <tr>
+            {headers.map((header) => (
+              <th key={header} className="px-2 py-2 font-semibold">
+                {header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr
+              key={`${row[0]}-${index}`}
+              className="border-b border-slate-100 last:border-0"
+            >
+              {row.map((cell, cellIndex) => (
+                <td
+                  key={cellIndex}
+                  className={`px-2 py-2 ${
+                    cellIndex === row.length - 1 &&
+                    String(cell).includes("Blocked")
+                      ? "font-medium text-red-600"
+                      : "text-slate-700"
+                  }`}
+                >
+                  {cell}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function RequestGraph({ points }) {
   const max = Math.max(1, ...points.map((point) => point.count));
-  const path = points.map((point, index) => `${index ? 'L' : 'M'} ${(index / Math.max(1, points.length - 1)) * 100} ${100 - (point.count / max) * 90}`).join(' ');
-  return <svg className="mt-5 h-32 w-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="Requests per second graph"><path d="M0 100 H100" stroke="#e2e8f0" strokeWidth="1" /><path d={path} fill="none" stroke="#2563eb" strokeWidth="2" vectorEffect="non-scaling-stroke" /></svg>;
+  const path = points
+    .map(
+      (point, index) =>
+        `${index ? "L" : "M"} ${(index / Math.max(1, points.length - 1)) * 100} ${100 - (point.count / max) * 90}`,
+    )
+    .join(" ");
+  return (
+    <svg
+      className="mt-4 h-28 w-full"
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      aria-label="Requests per second graph"
+    >
+      <path d="M0 100 H100" stroke="#e2e8f0" strokeWidth="1" />
+      <path
+        d={path}
+        fill="none"
+        stroke="#2563eb"
+        strokeWidth="2"
+        vectorEffect="non-scaling-stroke"
+      />
+    </svg>
+  );
+}
+
+function formatNumber(value) {
+  return new Intl.NumberFormat().format(value ?? 0);
+}
+
+function formatAlgorithm(algorithm = "") {
+  return algorithm
+    .split("-")
+    .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : ""))
+    .join(" ");
+}
+
+function formatSection(section) {
+  return navItems.find(([id]) => id === section)?.[1] || "Dashboard";
+}
+
+function navigateToSection(id, setActiveSection) {
+  setActiveSection(id);
+  document
+    .getElementById(id)
+    ?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
