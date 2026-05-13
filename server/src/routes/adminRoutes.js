@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getActiveAlgorithm, getAlgorithms, getRateLimitRules, updateActiveAlgorithm, updateRateLimitRules } from '../config/rateLimitRules.js';
+import { resetMetrics } from '../services/metrics.js';
 
 const router = Router();
 
@@ -25,6 +26,11 @@ router.post('/algorithm', (req, res, next) => {
     error.statusCode = 400;
     next(error);
   }
+});
+
+router.post('/reset', (_req, res) => {
+  const fresh = resetMetrics();
+  res.json({ message: 'Metrics reset successfully.', metrics: fresh });
 });
 
 export default router;

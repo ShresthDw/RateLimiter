@@ -121,7 +121,13 @@ export const demoTokenBucket = new TokenBucket('rate-limit:demo');
 
 export const createTokenBucketMiddleware = (bucketOrProvider) => async (req, res, next) => {
   const startedAt = performance.now();
-  const clientId = req.ip || req.socket.remoteAddress || 'unknown';
+  const clientId =
+    req.headers['x-simulated-ip'] ||
+    req.headers['x-client-ip'] ||
+    (req.headers['x-forwarded-for'] ? req.headers['x-forwarded-for'].split(',')[0].trim() : null) ||
+    req.ip ||
+    req.socket?.remoteAddress ||
+    'unknown';
   const bucket = typeof bucketOrProvider === 'function' ? bucketOrProvider() : bucketOrProvider;
 
   try {
