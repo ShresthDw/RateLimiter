@@ -731,26 +731,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 50-User Swarm Quick Trigger Bar */}
-              <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg bg-[#121a2a] border border-[#2b3a52] text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="rounded bg-[#1e2f4a] text-blue-300 font-mono text-[11px] px-2 py-0.5 border border-[#2b446a] font-semibold">
-                    50-User Pool
-                  </span>
-                  <span className="text-slate-300">
-                    50 unique client IPs ready for multi-tenant rate limiting
-                  </span>
-                </div>
-                <button
-                  id="sim-dispatch-50-btn"
-                  onClick={() => sendMultiUserRequests(50)}
-                  disabled={burstLoading}
-                  className="rounded bg-blue-600 hover:bg-blue-700 text-white font-medium py-1.5 px-3 text-xs transition cursor-pointer disabled:opacity-50 active:scale-95"
-                >
-                  {burstLoading && multiUserProgress ? "Simulating..." : "Send 50 Users (1 Req Each)"}
-                </button>
-              </div>
-
               {/* Simulator Config Grid */}
               <div className="grid gap-3 sm:grid-cols-2 pt-1">
                 <div>
