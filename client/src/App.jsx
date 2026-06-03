@@ -429,15 +429,15 @@ export default function App() {
     return [...stats.values()].sort((a, b) => b.requests - a.requests);
   }, [metrics.recentRequests]);
 
-  // Filtered Traffic Stream
+  // Filtered Traffic Stream (20 Latest Logs)
   const filteredRequests = useMemo(() => {
+    let list = metrics.recentRequests;
     if (trafficFilter === "allowed") {
-      return metrics.recentRequests.filter((r) => r.allowed);
+      list = metrics.recentRequests.filter((r) => r.allowed);
+    } else if (trafficFilter === "blocked") {
+      list = metrics.recentRequests.filter((r) => !r.allowed);
     }
-    if (trafficFilter === "blocked") {
-      return metrics.recentRequests.filter((r) => !r.allowed);
-    }
-    return metrics.recentRequests;
+    return list.slice(0, 20);
   }, [metrics.recentRequests, trafficFilter]);
 
   const availableTokens = bucket.availableTokens ?? bucket.remaining ?? rules.limit;
@@ -455,18 +455,13 @@ export default function App() {
           <div className="flex h-8 w-8 items-center justify-center rounded bg-[#25354e] border border-[#374b6c] font-bold text-slate-100">
             <span className="text-xs font-mono font-semibold tracking-wider">RL</span>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-bold tracking-tight text-white">
-                RateLimiter Gateway
-              </span>
-              <span className="rounded bg-[#25354e] px-1.5 py-0.5 text-[10px] font-semibold text-slate-300 border border-[#374b6c]">
-                Live Gateway
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Active Strategy: <strong className="text-slate-200">{formatAlgorithm(activeAlgorithm)}</strong> ({rules.limit} req / {rules.window})
-            </p>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold tracking-tight text-white">
+              RateLimiter Gateway
+            </span>
+            <span className="rounded bg-[#25354e] px-1.5 py-0.5 text-[10px] font-semibold text-slate-300 border border-[#374b6c]">
+              Live Gateway
+            </span>
           </div>
         </div>
 
@@ -636,8 +631,44 @@ export default function App() {
             />
           </section>
 
-          {/* Section 2: Interactive Traffic Station & Token Bucket Gauge */}
-          <section id="simulator" className="grid gap-5 xl:grid-cols-[1.4fr_.9fr]">
+          {/* Section 2: Dual-Series Real-Time RPS Traffic Graph (5-Minute Timeline) */}
+          <section className="rounded-xl border border-[#2d3d58] bg-[#1c283f] p-5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2b3a52] pb-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Real-Time Gateway Metrics
+                </p>
+                <h2 className="text-sm font-bold text-white tracking-tight">
+                  Requests Per Second (RPS) — Last 5 Minutes Timeline
+                </h2>
+              </div>
+              <div className="flex items-center gap-4 text-xs font-medium">
+                <span className="flex items-center gap-1.5 text-emerald-400">
+                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+                  Allowed (200)
+                </span>
+                <span className="flex items-center gap-1.5 text-rose-400">
+                  <span className="h-2.5 w-2.5 rounded-full bg-rose-500"></span>
+                  Blocked (429)
+                </span>
+                <span className="rounded bg-[#121a2a] px-2 py-0.5 text-slate-300 font-mono border border-[#2b3a52]">
+                  Peak: {metrics.peakRps} RPS
+                </span>
+              </div>
+            </div>
+
+            {/* Custom Dual-Series Area SVG Chart for 5-minute timeline */}
+            <DualSeriesTrafficGraph points={metrics.requestSeries} />
+
+            <div className="flex justify-between text-[11px] text-slate-400 font-mono pt-1">
+              <span>5 minutes ago</span>
+              <span>2.5 minutes ago</span>
+              <span>Now (Live)</span>
+            </div>
+          </section>
+
+          {/* Section 3: Interactive Traffic Station & Compact Token Bucket Gauge */}
+          <section id="simulator" className="grid gap-5 xl:grid-cols-[1.65fr_0.85fr]">
             {/* Live Traffic Simulator Control Station */}
             <div className="rounded-xl border border-[#2d3d58] bg-[#1c283f] p-5 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2b3a52] pb-3">
@@ -907,40 +938,40 @@ export default function App() {
               )}
             </div>
 
-            {/* Live Token Bucket / Capacity Gauge */}
-            <div className="rounded-xl border border-[#2d3d58] bg-[#1c283f] p-5 flex flex-col justify-between space-y-4">
-              <div className="flex items-center justify-between border-b border-[#2b3a52] pb-3">
+            {/* Compact Token Bucket Capacity Gauge */}
+            <div className="rounded-xl border border-[#2d3d58] bg-[#1c283f] p-4 flex flex-col justify-between space-y-3">
+              <div className="flex items-center justify-between border-b border-[#2b3a52] pb-2.5">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Gauge</p>
-                  <h3 className="text-sm font-bold text-white">
+                  <h3 className="text-xs font-bold text-white">
                     Token Bucket State
                   </h3>
                 </div>
                 <span className="text-[10px] font-mono rounded bg-[#121a2a] px-2 py-0.5 text-slate-300 border border-[#2b3a52]">
-                  Client: {simClientIp}
+                  {simClientIp}
                 </span>
               </div>
 
-              {/* Visual Circular Meter */}
-              <div className="py-2 text-center space-y-3">
-                <div className="relative mx-auto w-36 h-36 flex items-center justify-center">
+              {/* Compact Visual Circular Meter */}
+              <div className="py-1 text-center space-y-2">
+                <div className="relative mx-auto w-24 h-24 flex items-center justify-center">
                   <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                     <circle
                       cx="50"
                       cy="50"
-                      r="40"
+                      r="38"
                       className="text-[#121a2a]"
-                      strokeWidth="8"
+                      strokeWidth="7"
                       stroke="currentColor"
                       fill="transparent"
                     />
                     <circle
                       cx="50"
                       cy="50"
-                      r="40"
-                      strokeWidth="8"
-                      strokeDasharray={2 * Math.PI * 40}
-                      strokeDashoffset={2 * Math.PI * 40 * (1 - meterPercent / 100)}
+                      r="38"
+                      strokeWidth="7"
+                      strokeDasharray={2 * Math.PI * 38}
+                      strokeDashoffset={2 * Math.PI * 38 * (1 - meterPercent / 100)}
                       strokeLinecap="round"
                       className={`transition-all duration-300 ${
                         meterPercent > 50
@@ -954,81 +985,41 @@ export default function App() {
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className="text-2xl font-bold tracking-tight font-mono text-white">
+                    <span className="text-xl font-bold tracking-tight font-mono text-white">
                       {typeof availableTokens === "number" ? availableTokens.toFixed(0) : rules.limit}
                     </span>
-                    <span className="text-[10px] text-slate-400">
-                      / {rules.limit} Tokens
+                    <span className="text-[9px] text-slate-400 font-mono">
+                      / {rules.limit}
                     </span>
                   </div>
                 </div>
 
-                <p className="text-xs text-slate-300 font-medium">
+                <p className="text-[11px] text-slate-300 font-medium">
                   {availableTokens > 0
-                    ? `Bucket has ${availableTokens.toFixed(1)} tokens available`
-                    : "Bucket depleted: actively rate-limiting requests"}
+                    ? `${availableTokens.toFixed(1)} tokens available`
+                    : "Bucket depleted: 429 limiting"}
                 </p>
               </div>
 
-              {/* Bucket Metadata Breakdown */}
-              <div className="rounded bg-[#121a2a] p-3 space-y-2 border border-[#2b3a52] text-xs">
+              {/* Compact Bucket Metadata Breakdown */}
+              <div className="rounded bg-[#121a2a] p-2.5 space-y-1.5 border border-[#2b3a52] text-[11px]">
                 <div className="flex justify-between text-slate-400">
-                  <span>Bucket Capacity:</span>
-                  <span className="font-mono text-slate-200">{rules.limit} tokens</span>
+                  <span>Capacity / Window:</span>
+                  <span className="font-mono text-slate-200">{rules.limit} tok / {rules.window}</span>
                 </div>
                 <div className="flex justify-between text-slate-400">
-                  <span>Refill Window:</span>
-                  <span className="font-mono text-slate-200">{rules.window}</span>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Refill Frequency:</span>
+                  <span>Refill Speed:</span>
                   <span className="font-mono text-emerald-400">
                     +{rules.limit > 0 ? (rules.limit / 60).toFixed(2) : 0} tok / sec
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-400">
-                  <span>Storage Engine:</span>
+                  <span>Engine:</span>
                   <span className="font-mono text-slate-300">
-                    {bucket.store === "redis" ? "Redis (Distributed Hash)" : "In-Memory Map"}
+                    {bucket.store === "redis" ? "Redis" : "In-Memory"}
                   </span>
                 </div>
               </div>
-            </div>
-          </section>
-
-          {/* Section 3: Dual-Series Real-Time RPS Traffic Graph (5-Minute Timeline) */}
-          <section className="rounded-xl border border-[#2d3d58] bg-[#1c283f] p-5 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2b3a52] pb-3">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Real-Time Gateway Metrics
-                </p>
-                <h2 className="text-sm font-bold text-white tracking-tight">
-                  Requests Per Second (RPS) — Last 5 Minutes Timeline
-                </h2>
-              </div>
-              <div className="flex items-center gap-4 text-xs font-medium">
-                <span className="flex items-center gap-1.5 text-emerald-400">
-                  <span className="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
-                  Allowed (200)
-                </span>
-                <span className="flex items-center gap-1.5 text-rose-400">
-                  <span className="h-2.5 w-2.5 rounded-full bg-rose-500"></span>
-                  Blocked (429)
-                </span>
-                <span className="rounded bg-[#121a2a] px-2 py-0.5 text-slate-300 font-mono border border-[#2b3a52]">
-                  Peak: {metrics.peakRps} RPS
-                </span>
-              </div>
-            </div>
-
-            {/* Custom Dual-Series Area SVG Chart for 5-minute timeline */}
-            <DualSeriesTrafficGraph points={metrics.requestSeries} />
-
-            <div className="flex justify-between text-[11px] text-slate-400 font-mono pt-1">
-              <span>5 minutes ago</span>
-              <span>2.5 minutes ago</span>
-              <span>Now (Live)</span>
             </div>
           </section>
 
@@ -1040,7 +1031,7 @@ export default function App() {
                   Live Traffic Stream
                 </p>
                 <h2 className="text-sm font-bold text-white tracking-tight">
-                  Recent Gateway Decisions & Request Logs
+                  Recent Gateway Decisions (Latest 20 Logs)
                 </h2>
               </div>
 
@@ -1052,7 +1043,7 @@ export default function App() {
                     trafficFilter === "all" ? "bg-[#273752] text-white border-[#3d5275]" : "text-slate-400 border-transparent hover:text-slate-200"
                   }`}
                 >
-                  All ({metrics.recentRequests.length})
+                  All ({Math.min(20, metrics.recentRequests.length)})
                 </button>
                 <button
                   onClick={() => setTrafficFilter("allowed")}

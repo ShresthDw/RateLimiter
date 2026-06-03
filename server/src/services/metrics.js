@@ -49,8 +49,8 @@ export const recordRateLimitDecision = ({ clientId, algorithm, allowed, response
     algorithm,
     responseTimeMs: Number(responseTimeMs.toFixed(2))
   });
-  if (metrics.recent.length > 50) {
-    metrics.recent.splice(50);
+  if (metrics.recent.length > 20) {
+    metrics.recent.splice(20);
   }
 
   const algorithmMetrics = metrics.algorithms.get(algorithm) || {
