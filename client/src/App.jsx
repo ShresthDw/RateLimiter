@@ -113,6 +113,19 @@ export default function App() {
   const [trafficFilter, setTrafficFilter] = useState("all");
   const [inspectedRequest, setInspectedRequest] = useState(null);
 
+  // Admin Mode State
+  const [isAdmin, setIsAdmin] = useState(() => {
+    return localStorage.getItem("rl_admin_auth") === "true";
+  });
+  const [adminKey, setAdminKey] = useState(() => {
+    return localStorage.getItem("rl_admin_key") || "";
+  });
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminInputPassword, setAdminInputPassword] = useState("");
+  const [adminAuthError, setAdminAuthError] = useState("");
+  const [adminAuthLoading, setAdminAuthLoading] = useState(false);
+  const [pendingAdminAction, setPendingAdminAction] = useState(null);
+
   // Traffic Simulator State
   const [simTargetEndpoint, setSimTargetEndpoint] = useState("/api/proxy/api/rooms?mock=true");
   const [simClientIp, setSimClientIp] = useState(mockClients[0].ip);
@@ -124,6 +137,52 @@ export default function App() {
   const [lastResponse, setLastResponse] = useState(null);
 
   const simulationTimerRef = useRef(null);
+
+  // Admin Authentication Actions
+  const handleAdminLogin = async (e) => {
+    if (e) e.preventDefault();
+    setAdminAuthError("");
+    setAdminAuthLoading(true);
+    try {
+      const res = await fetch(apiUrl("/admin/verify"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: adminInputPassword })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Incorrect admin password.");
+      }
+      const pass = adminInputPassword;
+      setIsAdmin(true);
+      setAdminKey(pass);
+      localStorage.setItem("rl_admin_auth", "true");
+      localStorage.setItem("rl_admin_key", pass);
+      setShowAdminModal(false);
+      setAdminInputPassword("");
+      setAdminAuthError("");
+
+      if (pendingAdminAction === "reset") {
+        handleResetMetrics(pass);
+      } else if (typeof pendingAdminAction === "object" && pendingAdminAction?.type === "algorithm") {
+        selectAlgorithm(pendingAdminAction.algoKey, pass);
+      } else if (pendingAdminAction === "rules") {
+        saveRules(null, pass);
+      }
+      setPendingAdminAction(null);
+    } catch (err) {
+      setAdminAuthError(err.message);
+    } finally {
+      setAdminAuthLoading(false);
+    }
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdmin(false);
+    setAdminKey("");
+    localStorage.removeItem("rl_admin_auth");
+    localStorage.removeItem("rl_admin_key");
+  };
 
   // Fetch Dashboard Data
   const refreshDashboard = async () => {
@@ -160,13 +219,23 @@ export default function App() {
     }
   };
 
-  // Switch Active Rate Limiting Algorithm
-  const selectAlgorithm = async (algorithm) => {
+  // Switch Active Rate Limiting Algorithm (Admin Only)
+  const selectAlgorithm = async (algorithm, overrideKey) => {
+    const keyToUse = overrideKey || adminKey;
+    if (!isAdmin && !overrideKey) {
+      setPendingAdminAction({ type: "algorithm", algoKey: algorithm });
+      setAdminAuthError("");
+      setShowAdminModal(true);
+      return;
+    }
     setError("");
     try {
       const response = await fetch(apiUrl("/admin/algorithm"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-key": keyToUse
+        },
         body: JSON.stringify({ algorithm })
       });
       const data = await response.json();
@@ -180,15 +249,25 @@ export default function App() {
     }
   };
 
-  // Save Policy Rules
-  const saveRules = async (event) => {
+  // Save Policy Rules (Admin Only)
+  const saveRules = async (event, overrideKey) => {
     if (event) event.preventDefault();
+    const keyToUse = overrideKey || adminKey;
+    if (!isAdmin && !overrideKey) {
+      setPendingAdminAction("rules");
+      setAdminAuthError("");
+      setShowAdminModal(true);
+      return;
+    }
     setSaving(true);
     setError("");
     try {
       const response = await fetch(apiUrl("/admin/rules"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-key": keyToUse
+        },
         body: JSON.stringify({
           ...draftRules,
           limit: Number(draftRules.limit)
@@ -208,11 +287,27 @@ export default function App() {
     }
   };
 
-  // Reset Metrics
-  const handleResetMetrics = async () => {
+  // Reset Metrics (Admin Only)
+  const handleResetMetrics = async (overrideKey) => {
+    const keyToUse = overrideKey || adminKey;
+    if (!isAdmin && !overrideKey) {
+      setPendingAdminAction("reset");
+      setAdminAuthError("");
+      setShowAdminModal(true);
+      return;
+    }
     try {
-      const response = await fetch(apiUrl("/api/reset-metrics"), { method: "POST" });
+      const response = await fetch(apiUrl("/admin/reset"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-key": keyToUse
+        }
+      });
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || "Could not reset metrics");
+      }
       if (data.metrics) {
         setMetrics({ ...emptyMetrics, ...data.metrics });
       }
@@ -466,18 +561,52 @@ export default function App() {
         </div>
 
         {/* Header Right Status & Controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           {isSimulating && (
-            <div className="flex items-center gap-2 rounded-lg bg-[#162923] px-3 py-1.5 text-xs font-medium text-emerald-400 border border-[#1f5341]">
+            <div className="hidden sm:flex items-center gap-2 rounded-lg bg-[#162923] px-3 py-1.5 text-xs font-medium text-emerald-400 border border-[#1f5341]">
               <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
               <span>Simulator Active ({simRps} RPS)</span>
             </div>
           )}
 
+          {/* Admin Mode Badge & Toggle */}
+          {isAdmin ? (
+            <div className="flex items-center gap-1.5">
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#142d24] px-2.5 py-1.5 text-xs font-medium text-emerald-300 border border-[#1f5641]">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                Admin Mode
+              </span>
+              <button
+                onClick={handleAdminLogout}
+                className="rounded-lg bg-[#273752] hover:bg-[#314464] text-slate-300 border border-[#384c6e] px-2.5 py-1.5 text-xs font-medium transition cursor-pointer"
+                title="Exit Admin Mode"
+              >
+                Lock
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span className="hidden md:inline-flex items-center gap-1.5 rounded-lg bg-[#121a2a] px-2.5 py-1.5 text-[11px] font-medium text-slate-400 border border-[#2b3a52]">
+                <span className="h-1.5 w-1.5 rounded-full bg-slate-500"></span>
+                Viewer Mode
+              </span>
+              <button
+                onClick={() => {
+                  setPendingAdminAction(null);
+                  setAdminAuthError("");
+                  setShowAdminModal(true);
+                }}
+                className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95"
+              >
+                Admin Unlock
+              </button>
+            </div>
+          )}
+
           <button
-            onClick={handleResetMetrics}
+            onClick={() => handleResetMetrics()}
             className="rounded-lg bg-[#273752] hover:bg-[#314464] text-slate-300 border border-[#384c6e] px-3 py-1.5 text-xs font-medium transition cursor-pointer"
-            title="Reset all metrics and decision counters"
+            title="Reset all metrics and decision counters (Admin Only)"
           >
             Reset Metrics
           </button>
@@ -1127,14 +1256,45 @@ export default function App() {
           <section id="policies" className="grid gap-5 lg:grid-cols-2">
             {/* Policy Configuration Form */}
             <article className="rounded-xl border border-[#2d3d58] bg-[#1c283f] p-5 space-y-4">
-              <div className="border-b border-[#2b3a52] pb-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Rate Limit Rules
-                </p>
-                <h3 className="text-sm font-bold text-white tracking-tight">
-                  Update Active Policy Rules
-                </h3>
+              <div className="flex items-center justify-between border-b border-[#2b3a52] pb-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Rate Limit Rules
+                  </p>
+                  <h3 className="text-sm font-bold text-white tracking-tight">
+                    Update Active Policy Rules
+                  </h3>
+                </div>
+                {isAdmin ? (
+                  <span className="inline-flex items-center gap-1 rounded bg-[#142d24] px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-[#1f5641]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                    Admin Active
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded bg-[#162033] px-2 py-0.5 text-[10px] font-medium text-slate-400 border border-[#2b3a52]">
+                    Read-Only (Viewer Mode)
+                  </span>
+                )}
               </div>
+
+              {!isAdmin && (
+                <div className="rounded-lg bg-[#152136] p-3 border border-[#273854] flex items-center justify-between text-xs">
+                  <div className="text-slate-300">
+                    <span className="font-semibold text-slate-200">Viewer Mode Active:</span> Editing policy parameters requires Admin authentication.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingAdminAction("rules");
+                      setAdminAuthError("");
+                      setShowAdminModal(true);
+                    }}
+                    className="ml-3 shrink-0 rounded bg-blue-600 hover:bg-blue-700 px-2.5 py-1 text-[11px] font-medium text-white transition cursor-pointer"
+                  >
+                    Unlock Admin
+                  </button>
+                </div>
+              )}
 
               <form onSubmit={saveRules} className="space-y-3.5">
                 <div className="grid grid-cols-2 gap-3">
@@ -1146,9 +1306,14 @@ export default function App() {
                       type="number"
                       min="1"
                       max="10000"
+                      disabled={!isAdmin}
                       value={draftRules.limit}
                       onChange={(e) => setDraftRules((cur) => ({ ...cur, limit: e.target.value }))}
-                      className="w-full rounded border border-[#334563] bg-[#121a2a] px-3 py-2 text-xs font-mono text-slate-200 focus:border-slate-400 focus:outline-none"
+                      className={`w-full rounded border px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none ${
+                        isAdmin
+                          ? "border-[#334563] bg-[#121a2a] focus:border-slate-400"
+                          : "border-[#253347] bg-[#111722] text-slate-400 cursor-not-allowed"
+                      }`}
                     />
                   </div>
                   <div>
@@ -1157,9 +1322,14 @@ export default function App() {
                     </label>
                     <input
                       type="text"
+                      disabled={!isAdmin}
                       value={draftRules.window}
                       onChange={(e) => setDraftRules((cur) => ({ ...cur, window: e.target.value }))}
-                      className="w-full rounded border border-[#334563] bg-[#121a2a] px-3 py-2 text-xs font-mono text-slate-200 focus:border-slate-400 focus:outline-none"
+                      className={`w-full rounded border px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none ${
+                        isAdmin
+                          ? "border-[#334563] bg-[#121a2a] focus:border-slate-400"
+                          : "border-[#253347] bg-[#111722] text-slate-400 cursor-not-allowed"
+                      }`}
                     />
                   </div>
                 </div>
@@ -1169,52 +1339,99 @@ export default function App() {
                   <span className="text-[10px] text-slate-400 font-semibold">Presets:</span>
                   <button
                     type="button"
+                    disabled={!isAdmin}
                     onClick={() => setDraftRules({ limit: 10, window: "10s" })}
-                    className="rounded bg-[#273752] hover:bg-[#314464] px-2 py-1 text-[10px] font-mono text-slate-300 border border-[#384c6e] transition cursor-pointer"
+                    className={`rounded px-2 py-1 text-[10px] font-mono border transition ${
+                      isAdmin
+                        ? "bg-[#273752] hover:bg-[#314464] text-slate-300 border-[#384c6e] cursor-pointer"
+                        : "bg-[#141c2b] text-slate-500 border-[#233044] cursor-not-allowed"
+                    }`}
                   >
                     10 req / 10s
                   </button>
                   <button
                     type="button"
+                    disabled={!isAdmin}
                     onClick={() => setDraftRules({ limit: 20, window: "1m" })}
-                    className="rounded bg-[#273752] hover:bg-[#314464] px-2 py-1 text-[10px] font-mono text-slate-300 border border-[#384c6e] transition cursor-pointer"
+                    className={`rounded px-2 py-1 text-[10px] font-mono border transition ${
+                      isAdmin
+                        ? "bg-[#273752] hover:bg-[#314464] text-slate-300 border-[#384c6e] cursor-pointer"
+                        : "bg-[#141c2b] text-slate-500 border-[#233044] cursor-not-allowed"
+                    }`}
                   >
                     20 req / 1m
                   </button>
                   <button
                     type="button"
+                    disabled={!isAdmin}
                     onClick={() => setDraftRules({ limit: 50, window: "1m" })}
-                    className="rounded bg-[#273752] hover:bg-[#314464] px-2 py-1 text-[10px] font-mono text-slate-300 border border-[#384c6e] transition cursor-pointer"
+                    className={`rounded px-2 py-1 text-[10px] font-mono border transition ${
+                      isAdmin
+                        ? "bg-[#273752] hover:bg-[#314464] text-slate-300 border-[#384c6e] cursor-pointer"
+                        : "bg-[#141c2b] text-slate-500 border-[#233044] cursor-not-allowed"
+                    }`}
                   >
                     50 req / 1m
                   </button>
                   <button
                     type="button"
+                    disabled={!isAdmin}
                     onClick={() => setDraftRules({ limit: 100, window: "1m" })}
-                    className="rounded bg-[#273752] hover:bg-[#314464] px-2 py-1 text-[10px] font-mono text-slate-300 border border-[#384c6e] transition cursor-pointer"
+                    className={`rounded px-2 py-1 text-[10px] font-mono border transition ${
+                      isAdmin
+                        ? "bg-[#273752] hover:bg-[#314464] text-slate-300 border-[#384c6e] cursor-pointer"
+                        : "bg-[#141c2b] text-slate-500 border-[#233044] cursor-not-allowed"
+                    }`}
                   >
                     100 req / 1m
                   </button>
                 </div>
 
-                <button
-                  disabled={saving}
-                  className="w-full rounded bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 text-xs transition disabled:opacity-50 cursor-pointer"
-                >
-                  {saving ? "Updating Gateway Policy..." : "Apply Policy Immediately"}
-                </button>
+                {isAdmin ? (
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="w-full rounded bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 text-xs transition disabled:opacity-50 cursor-pointer"
+                  >
+                    {saving ? "Updating Gateway Policy..." : "Apply Policy Immediately"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingAdminAction("rules");
+                      setAdminAuthError("");
+                      setShowAdminModal(true);
+                    }}
+                    className="w-full rounded bg-[#273752] hover:bg-[#334666] text-slate-200 border border-[#3c5174] font-medium py-2 px-4 text-xs transition cursor-pointer"
+                  >
+                    Unlock Admin Mode to Modify Policy
+                  </button>
+                )}
               </form>
             </article>
 
             {/* Algorithm Switcher */}
             <article className="rounded-xl border border-[#2d3d58] bg-[#1c283f] p-5 space-y-4">
-              <div className="border-b border-[#2b3a52] pb-3">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Rate Limiting Algorithms
-                </p>
-                <h3 className="text-sm font-bold text-white tracking-tight">
-                  Select Active Limiting Strategy
-                </h3>
+              <div className="flex items-center justify-between border-b border-[#2b3a52] pb-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Rate Limiting Algorithms
+                  </p>
+                  <h3 className="text-sm font-bold text-white tracking-tight">
+                    Select Active Limiting Strategy
+                  </h3>
+                </div>
+                {isAdmin ? (
+                  <span className="inline-flex items-center gap-1 rounded bg-[#142d24] px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-[#1f5641]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                    Admin Active
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded bg-[#162033] px-2 py-0.5 text-[10px] font-medium text-slate-400 border border-[#2b3a52]">
+                    Admin Required to Switch
+                  </span>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
@@ -1225,9 +1442,9 @@ export default function App() {
                     <button
                       key={algoKey}
                       onClick={() => selectAlgorithm(algoKey)}
-                      className={`rounded-lg p-3 text-left border transition cursor-pointer ${
+                      className={`rounded-lg p-3 text-left border transition cursor-pointer relative ${
                         isSelected
-                          ? "bg-[#253650] border-[#445b80] text-white"
+                          ? "bg-[#253650] border-[#445b80] text-white ring-1 ring-blue-500/40"
                           : "bg-[#121a2a] border-[#2b3a52] text-slate-400 hover:bg-[#1a2538] hover:text-slate-200"
                       }`}
                     >
@@ -1238,9 +1455,14 @@ export default function App() {
                         )}
                       </div>
                       <p className="mt-1 text-[10px] text-slate-400 line-clamp-2">{info.desc}</p>
-                      <span className="mt-2 inline-block rounded bg-[#162134] px-1.5 py-0.5 text-[9px] font-mono text-slate-400 border border-[#2b3a52]">
-                        {info.store}
-                      </span>
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="inline-block rounded bg-[#162134] px-1.5 py-0.5 text-[9px] font-mono text-slate-400 border border-[#2b3a52]">
+                          {info.store}
+                        </span>
+                        {!isAdmin && !isSelected && (
+                          <span className="text-[9px] font-medium text-slate-500">Admin</span>
+                        )}
+                      </div>
                     </button>
                   );
                 })}
@@ -1511,6 +1733,69 @@ export default function App() {
                 Close Inspector
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Unlock Modal */}
+      {showAdminModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+          <div className="w-full max-w-md rounded-xl border border-[#334665] bg-[#1c283f] p-6 shadow-2xl space-y-4">
+            <div className="border-b border-[#2b3a52] pb-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400">
+                Security Gateway
+              </span>
+              <h3 className="text-base font-bold text-white tracking-tight">
+                Admin Authentication Required
+              </h3>
+              <p className="mt-1 text-xs text-slate-400">
+                Enter the administrator password to modify gateway rules, change rate-limiting algorithms, or reset metrics.
+              </p>
+            </div>
+
+            {adminAuthError && (
+              <div className="rounded bg-[#2a171d] border border-[#52222d] p-3 text-xs text-rose-300 font-medium">
+                {adminAuthError}
+              </div>
+            )}
+
+            <form onSubmit={handleAdminLogin} className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-slate-300 block mb-1.5">
+                  Admin Master Password
+                </label>
+                <input
+                  type="password"
+                  autoFocus
+                  placeholder="Enter admin password"
+                  value={adminInputPassword}
+                  onChange={(e) => setAdminInputPassword(e.target.value)}
+                  className="w-full rounded border border-[#334563] bg-[#121a2a] px-3.5 py-2 text-xs font-mono text-slate-100 placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAdminModal(false);
+                    setAdminInputPassword("");
+                    setAdminAuthError("");
+                    setPendingAdminAction(null);
+                  }}
+                  className="rounded bg-[#273752] hover:bg-[#314464] px-4 py-2 text-xs font-medium text-slate-300 border border-[#384c6e] transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={adminAuthLoading || !adminInputPassword}
+                  className="rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 text-xs font-medium transition cursor-pointer"
+                >
+                  {adminAuthLoading ? "Verifying..." : "Unlock Admin Mode"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

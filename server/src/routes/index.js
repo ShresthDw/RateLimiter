@@ -12,9 +12,18 @@ router.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+const getAdminKey = () => process.env.ADMIN_KEY || 'admin123';
+const checkAdmin = (req) => {
+  const authHeader = req.headers['x-admin-key'] || req.headers['authorization']?.replace(/^Bearer /, '');
+  return authHeader === getAdminKey();
+};
+
 router.get('/analytics', (_req, res) => res.json(getMetrics()));
 router.get('/metrics', (_req, res) => res.json(getMetrics()));
-router.post('/reset-metrics', (_req, res) => {
+router.post('/reset-metrics', (req, res) => {
+  if (!checkAdmin(req)) {
+    return res.status(403).json({ message: 'Admin access required to reset metrics.' });
+  }
   const fresh = resetMetrics();
   res.json({ message: 'Metrics successfully reset.', metrics: fresh });
 });
@@ -24,6 +33,9 @@ router.get('/rules', (_req, res) =>
 );
 
 router.post('/rules', (req, res, next) => {
+  if (!checkAdmin(req)) {
+    return res.status(403).json({ message: 'Admin access required to update rate-limit rules.' });
+  }
   try {
     res.json({ message: 'Rate-limit rules updated.', ...updateRateLimitRules(req.body) });
   } catch (error) {
