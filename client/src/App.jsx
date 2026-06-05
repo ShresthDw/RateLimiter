@@ -180,6 +180,7 @@ export default function App() {
   const handleAdminLogout = () => {
     setIsAdmin(false);
     setAdminKey("");
+    setIsSimulating(false);
     localStorage.removeItem("rl_admin_auth");
     localStorage.removeItem("rl_admin_key");
   };
@@ -810,8 +811,18 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* Status Indicator */}
+                {/* Status Indicator & Admin Mode Badge */}
                 <div className="flex items-center gap-2">
+                  {isAdmin ? (
+                    <span className="inline-flex items-center gap-1 rounded bg-[#142d24] px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-[#1f5641]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                      Admin Active
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded bg-[#162033] px-2 py-0.5 text-[10px] font-medium text-slate-400 border border-[#2b3a52]">
+                      Read-Only (Viewer Mode)
+                    </span>
+                  )}
                   <span className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-medium border ${
                     isSimulating
                       ? "bg-[#162923] text-emerald-400 border-[#1f5341]"
@@ -831,28 +842,56 @@ export default function App() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <PresetButton
                     active={simPreset === "normal"}
-                    onClick={() => applyPreset("normal")}
+                    disabled={!isAdmin}
+                    onClick={() => {
+                      if (!isAdmin) {
+                        setShowAdminModal(true);
+                        return;
+                      }
+                      applyPreset("normal");
+                    }}
                     title="Normal Traffic"
                     subtitle="3 RPS (Single User)"
                     desc="Steady requests within token bucket limit."
                   />
                   <PresetButton
                     active={simPreset === "spike"}
-                    onClick={() => applyPreset("spike")}
+                    disabled={!isAdmin}
+                    onClick={() => {
+                      if (!isAdmin) {
+                        setShowAdminModal(true);
+                        return;
+                      }
+                      applyPreset("spike");
+                    }}
                     title="Traffic Surge"
                     subtitle="12 RPS (Single User)"
                     desc="Tests burst capacity and token depletion."
                   />
                   <PresetButton
                     active={simPreset === "attack"}
-                    onClick={() => applyPreset("attack")}
+                    disabled={!isAdmin}
+                    onClick={() => {
+                      if (!isAdmin) {
+                        setShowAdminModal(true);
+                        return;
+                      }
+                      applyPreset("attack");
+                    }}
                     title="DDoS Attack"
                     subtitle="25 RPS (50 Users)"
                     desc="Aggressive overload rotating across 50 users."
                   />
                   <PresetButton
                     active={simPreset === "multi"}
-                    onClick={() => applyPreset("multi")}
+                    disabled={!isAdmin}
+                    onClick={() => {
+                      if (!isAdmin) {
+                        setShowAdminModal(true);
+                        return;
+                      }
+                      applyPreset("multi");
+                    }}
                     title="50-User Swarm"
                     subtitle="10 RPS (50 Users)"
                     desc="Distributed multi-user & endpoint simulation."
@@ -867,7 +906,12 @@ export default function App() {
                     Target Gateway Route
                   </label>
                   <select
-                    className="w-full rounded border border-[#334563] bg-[#121a2a] px-3 py-2 text-xs font-mono text-slate-200 focus:border-slate-400 focus:outline-none"
+                    disabled={!isAdmin}
+                    className={`w-full rounded border px-3 py-2 text-xs font-mono focus:outline-none ${
+                      isAdmin
+                        ? "border-[#334563] bg-[#121a2a] text-slate-200 focus:border-slate-400"
+                        : "border-[#253347] bg-[#111722] text-slate-500 cursor-not-allowed"
+                    }`}
                     value={simTargetEndpoint}
                     onChange={(e) => setSimTargetEndpoint(e.target.value)}
                   >
@@ -884,7 +928,12 @@ export default function App() {
                     Simulated Client IP (50 Available)
                   </label>
                   <select
-                    className="w-full rounded border border-[#334563] bg-[#121a2a] px-3 py-2 text-xs font-mono text-slate-200 focus:border-slate-400 focus:outline-none"
+                    disabled={!isAdmin}
+                    className={`w-full rounded border px-3 py-2 text-xs font-mono focus:outline-none ${
+                      isAdmin
+                        ? "border-[#334563] bg-[#121a2a] text-slate-200 focus:border-slate-400"
+                        : "border-[#253347] bg-[#111722] text-slate-500 cursor-not-allowed"
+                    }`}
                     value={simClientIp}
                     onChange={(e) => setSimClientIp(e.target.value)}
                   >
@@ -939,9 +988,12 @@ export default function App() {
                   type="range"
                   min="1"
                   max="30"
+                  disabled={!isAdmin}
                   value={simRps}
                   onChange={(e) => setSimRps(Number(e.target.value))}
-                  className="w-full h-1.5 bg-[#121a2a] rounded appearance-none cursor-pointer accent-blue-500"
+                  className={`w-full h-1.5 bg-[#121a2a] rounded appearance-none accent-blue-500 ${
+                    isAdmin ? "cursor-pointer" : "cursor-not-allowed opacity-40"
+                  }`}
                 />
                 <div className="flex justify-between text-[10px] font-mono text-slate-400">
                   <span>1 req/s (Gentle)</span>
@@ -952,50 +1004,66 @@ export default function App() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#2b3a52]">
-                <button
-                  id="sim-send-single-btn"
-                  onClick={() => sendSingleRequest()}
-                  className="flex-1 min-w-[120px] rounded bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 text-xs flex items-center justify-center transition active:scale-95 cursor-pointer"
-                >
-                  Send 1 Request
-                </button>
-                <button
-                  id="sim-burst-10-btn"
-                  onClick={() => sendBurst(10)}
-                  disabled={burstLoading}
-                  className="flex-1 min-w-[100px] rounded bg-[#273752] hover:bg-[#314464] text-slate-200 border border-[#384c6e] font-medium py-2 px-3 text-xs flex items-center justify-center transition active:scale-95 disabled:opacity-50 cursor-pointer"
-                >
-                  Burst 10x
-                </button>
-                <button
-                  id="sim-burst-30-btn"
-                  onClick={() => sendBurst(30)}
-                  disabled={burstLoading}
-                  className="flex-1 min-w-[100px] rounded bg-[#273752] hover:bg-[#314464] text-slate-200 border border-[#384c6e] font-medium py-2 px-3 text-xs flex items-center justify-center transition active:scale-95 disabled:opacity-50 cursor-pointer"
-                >
-                  Surge 30x
-                </button>
-                <button
-                  id="sim-50-users-btn"
-                  onClick={() => sendMultiUserRequests(50)}
-                  disabled={burstLoading}
-                  className="flex-1 min-w-[150px] rounded bg-[#1e3a5f] hover:bg-[#254673] text-blue-200 border border-[#3b5d8f] font-semibold py-2 px-3 text-xs flex items-center justify-center transition active:scale-95 disabled:opacity-50 cursor-pointer"
-                >
-                  {burstLoading && multiUserProgress ? `Sending (${multiUserProgress.completed}/${multiUserProgress.total})...` : "Send 50 Users"}
-                </button>
-                <button
-                  id="sim-toggle-stream-btn"
-                  onClick={() => setIsSimulating(!isSimulating)}
-                  className={`flex-1 min-w-[150px] rounded font-medium py-2 px-3 text-xs flex items-center justify-center transition active:scale-95 cursor-pointer border ${
-                    isSimulating
-                      ? "bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
-                      : "bg-[#273752] hover:bg-[#314464] text-slate-200 border-[#384c6e]"
-                  }`}
-                >
-                  {isSimulating ? "Stop Stream" : "Start Continuous Stream"}
-                </button>
-              </div>
+              {isAdmin ? (
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#2b3a52]">
+                  <button
+                    id="sim-send-single-btn"
+                    onClick={() => sendSingleRequest()}
+                    className="flex-1 min-w-[120px] rounded bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 text-xs flex items-center justify-center transition active:scale-95 cursor-pointer"
+                  >
+                    Send 1 Request
+                  </button>
+                  <button
+                    id="sim-burst-10-btn"
+                    onClick={() => sendBurst(10)}
+                    disabled={burstLoading}
+                    className="flex-1 min-w-[100px] rounded bg-[#273752] hover:bg-[#314464] text-slate-200 border border-[#384c6e] font-medium py-2 px-3 text-xs flex items-center justify-center transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                  >
+                    Burst 10x
+                  </button>
+                  <button
+                    id="sim-burst-30-btn"
+                    onClick={() => sendBurst(30)}
+                    disabled={burstLoading}
+                    className="flex-1 min-w-[100px] rounded bg-[#273752] hover:bg-[#314464] text-slate-200 border border-[#384c6e] font-medium py-2 px-3 text-xs flex items-center justify-center transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                  >
+                    Surge 30x
+                  </button>
+                  <button
+                    id="sim-50-users-btn"
+                    onClick={() => sendMultiUserRequests(50)}
+                    disabled={burstLoading}
+                    className="flex-1 min-w-[150px] rounded bg-[#1e3a5f] hover:bg-[#254673] text-blue-200 border border-[#3b5d8f] font-semibold py-2 px-3 text-xs flex items-center justify-center transition active:scale-95 disabled:opacity-50 cursor-pointer"
+                  >
+                    {burstLoading && multiUserProgress ? `Sending (${multiUserProgress.completed}/${multiUserProgress.total})...` : "Send 50 Users"}
+                  </button>
+                  <button
+                    id="sim-toggle-stream-btn"
+                    onClick={() => setIsSimulating(!isSimulating)}
+                    className={`flex-1 min-w-[150px] rounded font-medium py-2 px-3 text-xs flex items-center justify-center transition active:scale-95 cursor-pointer border ${
+                      isSimulating
+                        ? "bg-amber-600 hover:bg-amber-700 text-white border-amber-600"
+                        : "bg-[#273752] hover:bg-[#314464] text-slate-200 border-[#384c6e]"
+                    }`}
+                  >
+                    {isSimulating ? "Stop Stream" : "Start Continuous Stream"}
+                  </button>
+                </div>
+              ) : (
+                <div className="pt-2 border-t border-[#2b3a52]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingAdminAction(null);
+                      setAdminAuthError("");
+                      setShowAdminModal(true);
+                    }}
+                    className="w-full rounded bg-[#273752] hover:bg-[#334666] text-slate-200 border border-[#3c5174] font-medium py-2.5 px-4 text-xs transition cursor-pointer text-center"
+                  >
+                    Unlock Admin Mode to Run Traffic Simulator & Load Tests
+                  </button>
+                </div>
+              )}
 
               {/* 50 Users Live Progress / Summary Banner */}
               {multiUserProgress && (
@@ -1276,25 +1344,6 @@ export default function App() {
                   </span>
                 )}
               </div>
-
-              {!isAdmin && (
-                <div className="rounded-lg bg-[#152136] p-3 border border-[#273854] flex items-center justify-between text-xs">
-                  <div className="text-slate-300">
-                    <span className="font-semibold text-slate-200">Viewer Mode Active:</span> Editing policy parameters requires Admin authentication.
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPendingAdminAction("rules");
-                      setAdminAuthError("");
-                      setShowAdminModal(true);
-                    }}
-                    className="ml-3 shrink-0 rounded bg-blue-600 hover:bg-blue-700 px-2.5 py-1 text-[11px] font-medium text-white transition cursor-pointer"
-                  >
-                    Unlock Admin
-                  </button>
-                </div>
-              )}
 
               <form onSubmit={saveRules} className="space-y-3.5">
                 <div className="grid grid-cols-2 gap-3">
@@ -1820,21 +1869,24 @@ function StatCard({ tag, label, value, subtext, tone = "text-white" }) {
   );
 }
 
-function PresetButton({ active, onClick, title, subtitle, desc }) {
+function PresetButton({ active, onClick, title, subtitle, desc, disabled = false }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
-      className={`rounded p-2.5 text-left border transition cursor-pointer ${
-        active
-          ? "bg-[#253650] border-[#445b80] text-white"
-          : "bg-[#121a2a] border-[#2b3a52] text-slate-400 hover:bg-[#1a2538] hover:text-slate-200"
+      className={`rounded p-2.5 text-left border transition ${
+        disabled
+          ? "bg-[#141c2b] border-[#222f42] text-slate-500 opacity-60 cursor-not-allowed"
+          : active
+          ? "bg-[#253650] border-[#445b80] text-white cursor-pointer"
+          : "bg-[#121a2a] border-[#2b3a52] text-slate-400 hover:bg-[#1a2538] hover:text-slate-200 cursor-pointer"
       }`}
     >
       <div className="flex items-center justify-between">
-        <span className="font-semibold text-xs text-slate-100">{title}</span>
+        <span className={`font-semibold text-xs ${disabled ? "text-slate-500" : "text-slate-100"}`}>{title}</span>
       </div>
-      <span className="mt-0.5 block text-[10px] font-mono text-slate-300">{subtitle}</span>
+      <span className={`mt-0.5 block text-[10px] font-mono ${disabled ? "text-slate-500" : "text-slate-300"}`}>{subtitle}</span>
       <p className="mt-1 text-[9px] text-slate-400 leading-tight">{desc}</p>
     </button>
   );
