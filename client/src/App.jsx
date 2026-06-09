@@ -603,14 +603,6 @@ export default function App() {
               </button>
             </div>
           )}
-
-          <button
-            onClick={() => handleResetMetrics()}
-            className="rounded-lg bg-[#273752] hover:bg-[#314464] text-slate-300 border border-[#384c6e] px-3 py-1.5 text-xs font-medium transition cursor-pointer"
-            title="Reset all metrics and decision counters (Admin Only)"
-          >
-            Reset Metrics
-          </button>
         </div>
       </header>
 
@@ -772,7 +764,7 @@ export default function App() {
                   Requests Per Second (RPS) — Last 5 Minutes Timeline
                 </h2>
               </div>
-              <div className="flex items-center gap-4 text-xs font-medium">
+              <div className="flex flex-wrap items-center gap-3 text-xs font-medium">
                 <span className="flex items-center gap-1.5 text-emerald-400">
                   <span className="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
                   Allowed (200)
@@ -784,6 +776,13 @@ export default function App() {
                 <span className="rounded bg-[#121a2a] px-2 py-0.5 text-slate-300 font-mono border border-[#2b3a52]">
                   Peak: {metrics.peakRps} RPS
                 </span>
+                <button
+                  onClick={() => handleResetMetrics()}
+                  className="rounded-lg bg-[#273752] hover:bg-[#314464] text-slate-300 border border-[#384c6e] px-2.5 py-1 text-xs font-medium transition cursor-pointer"
+                  title="Reset all metrics and decision counters (Admin Only)"
+                >
+                  Reset Metrics
+                </button>
               </div>
             </div>
 
@@ -811,16 +810,12 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* Status Indicator & Admin Mode Badge */}
+                {/* Status Indicator */}
                 <div className="flex items-center gap-2">
-                  {isAdmin ? (
+                  {isAdmin && (
                     <span className="inline-flex items-center gap-1 rounded bg-[#142d24] px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-[#1f5641]">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
                       Admin Active
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 rounded bg-[#162033] px-2 py-0.5 text-[10px] font-medium text-slate-400 border border-[#2b3a52]">
-                      Read-Only (Viewer Mode)
                     </span>
                   )}
                   <span className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[11px] font-medium border ${
@@ -1333,14 +1328,10 @@ export default function App() {
                     Update Active Policy Rules
                   </h3>
                 </div>
-                {isAdmin ? (
+                {isAdmin && (
                   <span className="inline-flex items-center gap-1 rounded bg-[#142d24] px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-[#1f5641]">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
                     Admin Active
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded bg-[#162033] px-2 py-0.5 text-[10px] font-medium text-slate-400 border border-[#2b3a52]">
-                    Read-Only (Viewer Mode)
                   </span>
                 )}
               </div>
@@ -1471,14 +1462,10 @@ export default function App() {
                     Select Active Limiting Strategy
                   </h3>
                 </div>
-                {isAdmin ? (
+                {isAdmin && (
                   <span className="inline-flex items-center gap-1 rounded bg-[#142d24] px-2 py-0.5 text-[10px] font-medium text-emerald-300 border border-[#1f5641]">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
                     Admin Active
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded bg-[#162033] px-2 py-0.5 text-[10px] font-medium text-slate-400 border border-[#2b3a52]">
-                    Admin Required to Switch
                   </span>
                 )}
               </div>
