@@ -5,12 +5,15 @@ import { getActiveAlgorithm, getAlgorithms, getRateLimitRules, updateRateLimitRu
 import { getActiveLimiter } from '../services/rateLimiters.js';
 import { getRedisStatus } from '../config/redis.js';
 import { requireStayHubTarget, stayHubProxy } from '../proxy/proxy.js';
+import { getHealthData } from '../services/health.js';
 
 const router = Router();
 
-router.get('/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+router.get('/health', async (_req, res) => {
+  const data = await getHealthData();
+  res.json(data);
 });
+
 
 const getAdminKey = () => process.env.ADMIN_KEY || 'admin123';
 const checkAdmin = (req) => {

@@ -13,7 +13,12 @@ export const initRedis = async () => {
   try {
     redis = new Redis(redisUri, {
       maxRetriesPerRequest: 1,
-      enableOfflineQueue: false
+      enableOfflineQueue: false,
+      keepAlive: 10000,
+      retryStrategy(times) {
+        const delay = Math.min(times * 200, 2000);
+        return delay;
+      }
     });
     redis.on('connect', () => console.log('Redis connected'));
     redis.on('error', (err) => console.error('Redis error:', err.message));
@@ -27,11 +32,13 @@ export const initRedis = async () => {
 export const getRedis = () => redis;
 
 export const getRedisStatus = async () => {
-  if (!redis || redis.status !== 'ready') return { connected: false };
+  if (!redis || redis.status !== 'ready') return { connected: false, mode: 'in-memory' };
   const startedAt = performance.now();
   try {
     await redis.ping();
     const keys = await redis.dbsize();
-    return { connected: true, latencyMs: Number((performance.now() - startedAt).toFixed(2)), keys };
-  } catch { return { connected: false }; }
+    return { connected: true, mode: 'redis', latencyMs: Number((performance.now() - startedAt).toFixed(2)), keys };
+  } catch {
+    return { connected: false, mode: 'in-memory' };
+  }
 };

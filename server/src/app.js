@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import apiRoutes from './routes/index.js';
 import adminRoutes from './routes/adminRoutes.js';
+import { getHealthData } from './services/health.js';
 
 const app = express();
 const appDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -16,6 +17,13 @@ app.use(helmet());
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(morgan('dev'));
+
+// Top-level and API health routes for monitoring / keep-alive pings
+app.get('/health', async (_req, res) => {
+  const data = await getHealthData();
+  res.json(data);
+});
+
 app.use('/admin', adminRoutes);
 app.use('/api', apiRoutes);
 

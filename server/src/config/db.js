@@ -15,3 +15,12 @@ export const connectDB = async () => {
     console.error('MongoDB connection failed:', error.message);
   }
 };
+
+export const getDbStatus = () => {
+  const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+  const state = mongoose.connection.readyState;
+  return {
+    connected: state === 1,
+    status: states[state] || 'unknown'
+  };
+};
