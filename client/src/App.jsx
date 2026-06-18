@@ -570,39 +570,45 @@ export default function App() {
             </div>
           )}
 
-          {/* Admin Mode Badge & Toggle */}
-          {isAdmin ? (
-            <div className="flex items-center gap-1.5">
-              <span className="inline-flex items-center gap-1.5 rounded-lg bg-[#142d24] px-2.5 py-1.5 text-xs font-medium text-emerald-300 border border-[#1f5641]">
-                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                Admin Mode
-              </span>
-              <button
-                onClick={handleAdminLogout}
-                className="rounded-lg bg-[#273752] hover:bg-[#314464] text-slate-300 border border-[#384c6e] px-2.5 py-1.5 text-xs font-medium transition cursor-pointer"
-                title="Exit Admin Mode"
-              >
-                Lock
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5">
-              <span className="hidden md:inline-flex items-center gap-1.5 rounded-lg bg-[#121a2a] px-2.5 py-1.5 text-[11px] font-medium text-slate-400 border border-[#2b3a52]">
-                <span className="h-1.5 w-1.5 rounded-full bg-slate-500"></span>
-                Viewer Mode
-              </span>
-              <button
-                onClick={() => {
+          {/* Segmented Mode Switcher (Viewer vs Admin) */}
+          <div className="flex items-center rounded-lg bg-[#121a2a] p-1 border border-[#2b3a52] text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                if (isAdmin) {
+                  handleAdminLogout();
+                }
+              }}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition cursor-pointer ${
+                !isAdmin
+                  ? "bg-[#25354e] text-white shadow-sm border border-[#3d5275]"
+                  : "text-slate-400 hover:text-slate-200 border border-transparent"
+              }`}
+              title={!isAdmin ? "Currently in Viewer Mode (Read-Only)" : "Switch to Viewer Mode (Lock Admin)"}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${!isAdmin ? "bg-slate-300" : "bg-slate-600"}`}></span>
+              Viewer
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!isAdmin) {
                   setPendingAdminAction(null);
                   setAdminAuthError("");
                   setShowAdminModal(true);
-                }}
-                className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 text-xs font-medium transition cursor-pointer active:scale-95"
-              >
-                Admin Unlock
-              </button>
-            </div>
-          )}
+                }
+              }}
+              className={`flex items-center gap-1.5 rounded-md px-3 py-1 font-medium transition cursor-pointer ${
+                isAdmin
+                  ? "bg-blue-600 text-white shadow-sm border border-blue-500"
+                  : "text-slate-400 hover:text-slate-200 border border-transparent"
+              }`}
+              title={isAdmin ? "Admin Mode Active (Full Control)" : "Authenticate to Unlock Admin Mode"}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${isAdmin ? "bg-emerald-300 animate-pulse" : "bg-slate-600"}`}></span>
+              Admin
+            </button>
+          </div>
         </div>
       </header>
 
@@ -778,7 +784,11 @@ export default function App() {
                 </span>
                 <button
                   onClick={() => handleResetMetrics()}
-                  className="rounded-lg bg-[#273752] hover:bg-[#314464] text-slate-300 border border-[#384c6e] px-2.5 py-1 text-xs font-medium transition cursor-pointer"
+                  className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition cursor-pointer ${
+                    isAdmin
+                      ? "bg-[#273752] hover:bg-[#314464] text-slate-300 border-[#384c6e]"
+                      : "bg-[#162033] hover:bg-[#1f2d47] text-slate-400 border-[#2a3a52] opacity-70 hover:opacity-100"
+                  }`}
                   title="Reset all metrics and decision counters (Admin Only)"
                 >
                   Reset Metrics
@@ -830,8 +840,8 @@ export default function App() {
               </div>
 
               {/* Simulation Preset Quick Selector */}
-              <div>
-                <p className="text-[11px] font-semibold text-slate-400 mb-2 uppercase tracking-wider">
+              <div className={!isAdmin ? "opacity-60 transition-opacity" : ""}>
+                <p className={`text-[11px] font-semibold mb-2 uppercase tracking-wider ${!isAdmin ? "text-slate-500" : "text-slate-400"}`}>
                   Select Traffic Scenario
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -895,9 +905,9 @@ export default function App() {
               </div>
 
               {/* Simulator Config Grid */}
-              <div className="grid gap-3 sm:grid-cols-2 pt-1">
+              <div className={`grid gap-3 sm:grid-cols-2 pt-1 ${!isAdmin ? "opacity-60 transition-opacity" : ""}`}>
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                  <label className={`text-[11px] font-semibold block mb-1 ${!isAdmin ? "text-slate-500" : "text-slate-400"}`}>
                     Target Gateway Route
                   </label>
                   <select
@@ -919,7 +929,7 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                  <label className={`text-[11px] font-semibold block mb-1 ${!isAdmin ? "text-slate-500" : "text-slate-400"}`}>
                     Simulated Client IP (50 Available)
                   </label>
                   <select
@@ -972,10 +982,14 @@ export default function App() {
               </div>
 
               {/* Interactive RPS Slider */}
-              <div className="space-y-2 pt-1">
+              <div className={`space-y-2 pt-1 ${!isAdmin ? "opacity-60 transition-opacity" : ""}`}>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium text-slate-300">Continuous Stream Rate:</span>
-                  <span className="font-mono font-semibold text-slate-200 bg-[#141d2e] px-2 py-0.5 rounded border border-[#2b3a52]">
+                  <span className={`font-medium ${!isAdmin ? "text-slate-500" : "text-slate-300"}`}>Continuous Stream Rate:</span>
+                  <span className={`font-mono font-semibold px-2 py-0.5 rounded border ${
+                    !isAdmin
+                      ? "text-slate-500 bg-[#0f1523] border-[#222e40]"
+                      : "text-slate-200 bg-[#141d2e] border-[#2b3a52]"
+                  }`}>
                     {simRps} requests / sec
                   </span>
                 </div>
@@ -990,7 +1004,7 @@ export default function App() {
                     isAdmin ? "cursor-pointer" : "cursor-not-allowed opacity-40"
                   }`}
                 />
-                <div className="flex justify-between text-[10px] font-mono text-slate-400">
+                <div className="flex justify-between text-[10px] font-mono text-slate-500">
                   <span>1 req/s (Gentle)</span>
                   <span>10 req/s (Moderate)</span>
                   <span>20 req/s (Heavy)</span>
@@ -1337,9 +1351,9 @@ export default function App() {
               </div>
 
               <form onSubmit={saveRules} className="space-y-3.5">
-                <div className="grid grid-cols-2 gap-3">
+                <div className={`grid grid-cols-2 gap-3 ${!isAdmin ? "opacity-60 transition-opacity" : ""}`}>
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                    <label className={`text-[11px] font-semibold block mb-1 ${!isAdmin ? "text-slate-500" : "text-slate-400"}`}>
                       Max Requests Limit
                     </label>
                     <input
@@ -1349,15 +1363,15 @@ export default function App() {
                       disabled={!isAdmin}
                       value={draftRules.limit}
                       onChange={(e) => setDraftRules((cur) => ({ ...cur, limit: e.target.value }))}
-                      className={`w-full rounded border px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none ${
+                      className={`w-full rounded border px-3 py-2 text-xs font-mono focus:outline-none ${
                         isAdmin
-                          ? "border-[#334563] bg-[#121a2a] focus:border-slate-400"
-                          : "border-[#253347] bg-[#111722] text-slate-400 cursor-not-allowed"
+                          ? "border-[#334563] bg-[#121a2a] text-slate-200 focus:border-slate-400"
+                          : "border-[#253347] bg-[#111722] text-slate-500 cursor-not-allowed"
                       }`}
                     />
                   </div>
                   <div>
-                    <label className="text-[11px] font-semibold text-slate-400 block mb-1">
+                    <label className={`text-[11px] font-semibold block mb-1 ${!isAdmin ? "text-slate-500" : "text-slate-400"}`}>
                       Window Duration (e.g. 1m, 30s, 10s)
                     </label>
                     <input
@@ -1365,18 +1379,18 @@ export default function App() {
                       disabled={!isAdmin}
                       value={draftRules.window}
                       onChange={(e) => setDraftRules((cur) => ({ ...cur, window: e.target.value }))}
-                      className={`w-full rounded border px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none ${
+                      className={`w-full rounded border px-3 py-2 text-xs font-mono focus:outline-none ${
                         isAdmin
-                          ? "border-[#334563] bg-[#121a2a] focus:border-slate-400"
-                          : "border-[#253347] bg-[#111722] text-slate-400 cursor-not-allowed"
+                          ? "border-[#334563] bg-[#121a2a] text-slate-200 focus:border-slate-400"
+                          : "border-[#253347] bg-[#111722] text-slate-500 cursor-not-allowed"
                       }`}
                     />
                   </div>
                 </div>
 
                 {/* Quick Presets */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[10px] text-slate-400 font-semibold">Presets:</span>
+                <div className={`flex flex-wrap items-center gap-1.5 pt-1 ${!isAdmin ? "opacity-60 transition-opacity" : ""}`}>
+                  <span className={`text-[10px] font-semibold ${!isAdmin ? "text-slate-500" : "text-slate-400"}`}>Presets:</span>
                   <button
                     type="button"
                     disabled={!isAdmin}
@@ -1481,23 +1495,22 @@ export default function App() {
                       className={`rounded-lg p-3 text-left border transition cursor-pointer relative ${
                         isSelected
                           ? "bg-[#253650] border-[#445b80] text-white ring-1 ring-blue-500/40"
+                          : !isAdmin
+                          ? "bg-[#111722] border-[#222f42] text-slate-500 opacity-65 hover:opacity-85 hover:border-[#2f4059]"
                           : "bg-[#121a2a] border-[#2b3a52] text-slate-400 hover:bg-[#1a2538] hover:text-slate-200"
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <p className="font-semibold text-xs text-slate-100">{info.name}</p>
+                        <p className={`font-semibold text-xs ${isSelected ? "text-slate-100" : !isAdmin ? "text-slate-400" : "text-slate-200"}`}>{info.name}</p>
                         {isSelected && (
                           <span className="rounded bg-blue-600 px-1.5 py-0.2 text-[9px] text-white font-medium">Active</span>
                         )}
                       </div>
-                      <p className="mt-1 text-[10px] text-slate-400 line-clamp-2">{info.desc}</p>
+                      <p className={`mt-1 text-[10px] line-clamp-2 ${isSelected ? "text-slate-300" : "text-slate-500"}`}>{info.desc}</p>
                       <div className="mt-2 flex items-center justify-between">
-                        <span className="inline-block rounded bg-[#162134] px-1.5 py-0.5 text-[9px] font-mono text-slate-400 border border-[#2b3a52]">
+                        <span className="inline-block rounded bg-[#162134] px-1.5 py-0.5 text-[9px] font-mono text-slate-500 border border-[#26354c]">
                           {info.store}
                         </span>
-                        {!isAdmin && !isSelected && (
-                          <span className="text-[9px] font-medium text-slate-500">Admin</span>
-                        )}
                       </div>
                     </button>
                   );
